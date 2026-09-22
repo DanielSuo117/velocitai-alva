@@ -38,6 +38,7 @@ cp framework/config/settings.example.py framework/config/settings.py
 | `VIEWPORT_WIDTH` / `VIEWPORT_HEIGHT` | 浏览器视口，1280 × 900 |
 | `SELF_HEAL_ARTIFACT` / `SELF_HEAL_FINGERPRINTS` | 选择器自愈产物路径（`reports/self-heal/`） |
 | `ANTHROPIC_API_KEY` | 仅 `--self-heal=auto` 使用，留空即可 |
+| `SELF_HEAL_MODEL` | `--self-heal=auto` 用的模型名，留空用 `llm.py` 的 `DEFAULT_MODEL` |
 
 环境只有 `prod`，没有预发，也没有 `DEFAULT_ENV`：环境必须用 `--env` 显式指定，留默认值只会诱导
 某段代码悄悄拿它兜底。新增环境时在 `ENVS` 里加一项，`--env` 即可选用。
@@ -49,6 +50,7 @@ cp framework/config/settings.example.py framework/config/settings.py
 | `HEADLESS` | `true` / `false`（也认 `1/0`、`yes/no`、`on/off`）。写错的值直接报错，不会被当成 false |
 | `SLOW_MO` | 每步操作间隔（毫秒），覆盖跟随 `HEADLESS` 的默认值 |
 | `ANTHROPIC_API_KEY` | `--self-heal=auto` 的模型推理密钥，优先于 `settings.py` 的同名项 |
+| `SELF_HEAL_MODEL` | `--self-heal=auto` 的模型名，优先于 `settings.py` 的同名项 |
 | `VELOCITAI_LOG_LEVEL` | 框架日志级别，默认 `INFO` |
 
 ## 登录态
@@ -108,8 +110,11 @@ token 无效或过期时直接 fail，提示重新获取。`tests/e2e` 不加 `-
 ### 选择器自愈
 
 `--self-heal` 默认 `off`。`on`：定位失效时尝试重建定位符，用例继续；`strict`：同 `on`，但只要发生过自愈就
-以非零码结束，便于发现漂移；`auto`：同 `on`，并让模型推理且把修复写回页面对象源码（需要
-`ANTHROPIC_API_KEY`，会改动工作区，原文件备份为 `.heal-bak`）。写回同样要过落库闸门。
+以非零码结束，便于发现漂移；`auto`：同 `on`，并在规则修不了时让模型推理，且把修复写回页面对象源码
+（会改动工作区，原文件备份为 `.heal-bak`）。写回同样要过落库闸门。
+
+模型推理需要 `ANTHROPIC_API_KEY`。**没有 key 时 `auto` 不报错、不发网络请求，只用规则修复，但照样写回源码**。
+模型名依次取环境变量 `SELF_HEAL_MODEL`、`settings.py` 的 `SELF_HEAL_MODEL`，都为空时用 `framework/core/healing/llm.py` 的 `DEFAULT_MODEL`。
 
 ### 报告
 
@@ -129,7 +134,7 @@ allure serve reports/allure-results
 PYTHONPATH=framework .venv/bin/python -m unittest discover -s tests/unit -t .
 python3 -m unittest discover -s .claude/hooks/gate/tests -t .claude/hooks
 python3 .claude/hooks/gate_cli.py --mode audit      # rc=0 即无 BLOCK
-.venv/bin/pytest tests/e2e --env=prod --self-heal=on   # 自愈 e2e：只打开本地 HTML 夹具
+.venv/bin/pytest tests/e2e --env=prod --self-heal=on --alluredir=reports/allure-e2e   # 自愈 e2e：只打开本地 HTML 夹具；单独的结果目录，免得清掉业务回归的报告
 ```
 
 ## 落库闸门
