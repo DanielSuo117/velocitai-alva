@@ -16,5 +16,6 @@
 """
 from pages.components.sidebar_nav import SidebarNav
 from pages.home_page import HomePage
+from pages.login_page import LoginPage
 
-__all__ = ["HomePage", "SidebarNav"]
+__all__ = ["HomePage", "LoginPage", "SidebarNav"]

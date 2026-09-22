@@ -6,7 +6,7 @@
 .
 ├── framework/              代码 —— Python UI 自动化框架
 │   ├── core/               框架核心（base · healing · exceptions · logger），与业务无关
-│   ├── pages/              业务页面对象（home_page.py · components/sidebar_nav.py）
+│   ├── pages/              业务页面对象（home_page.py · login_page.py · components/sidebar_nav.py）
 │   ├── tests/              业务用例（guest/ · user/）+ 框架自测（unit/ · e2e/）
 │   ├── tools/              辅助脚本（save_auth_state.py：生成登录态）
 │   ├── config/             环境与浏览器配置（settings.py 不入库）
@@ -104,8 +104,11 @@ autouse fixture `_reset_to_home` 导航回首页并断言 `is_page_loaded()`：�
 
 ## 登录态
 
-alva.ai 只支持 Google 与邮箱验证码登录，没有 token 直登入口，因此登录用户的用例复用
+alva.ai 提供 Google / X / Telegram / Discord 第三方登录与邮箱验证码登录，均无 token 直登入口，因此登录用户的用例复用
 Playwright storageState（cookie + localStorage 快照），而不是每个用例自动登录。
+
+- **邮箱登录流程**：邮箱 → 6 位验证码 → Cloudflare Turnstile 人机验证（2026-09-22 用户手工录制确认）。
+  人机验证无法也不应自动化绕过，因此登录态只能人工生成。登录页（到邮箱输入为止）的封装见 `LoginPage`。
 
 - **生成**：`.venv/bin/python framework/tools/save_auth_state.py --env prod` 打开有头浏览器并进入 `/login`，
   由人手动登录后回终端按回车；脚本回到首页确认已登录才保存，确认不了就不写文件。

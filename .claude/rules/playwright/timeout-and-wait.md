@@ -79,3 +79,33 @@ def _setup_context(self, ...):
     self.<role>_page.wait_for_timeout(3000)   # 等待异步组件渲染完成
     home.search("<搜索关键词>")
 ```
+
+### 服务端渲染（SSR）页面：可见 ≠ 可交互，输入前先等水合
+
+**触发**：页面整页加载且首屏 HTML 已带表单控件（SSR / 同构渲染），用例在 `is_page_loaded()` 通过后立即 `fill`，
+且下一步断言依赖前端对输入的响应（提交按钮出现 / 启用、实时校验提示）。
+
+**失败现象**：`fill` 不报错、`input_value()` 也读得到填入的值，但依赖输入的按钮始终不出现，等满超时失败；
+水合完成后也不会补上 —— 水合前的 fill 只改了 DOM 的 value，框架状态仍是空串。实测：控件点击后约 0.45s 可见，
+约 1.6s 才水合，连续 3 次复现；人手操作比水合慢，手点复现不了，容易误判成定位符问题。
+
+❌ 反例：
+
+```python
+assert form_page.is_page_loaded()        # 只看可见：SSR 首屏已有控件
+form_page.fill_field("<输入值>")          # 水合前输入，被框架状态丢弃
+assert form_page.is_submit_enabled()     # 按钮永不出现 → 超时
+```
+
+✅ 正例：等待封装在 PageObject 的输入方法里（调用方不必记得），等的是「框架已接管该节点」这个确定信号，而不是固定时长：
+
+```python
+REACT_HYDRATED_JS = "el => Object.keys(el).some(k => k.startsWith('__reactProps$'))"   # React 水合后挂到节点上的属性
+
+def fill_field(self, value: str):
+    handle = self._locate(self.FIELD_INPUT).element_handle()
+    self.page.wait_for_function(self.REACT_HYDRATED_JS, arg=handle)   # 已水合时约 2ms 返回
+    self.fill(self.FIELD_INPUT, value)
+```
+
+非 React 站点换成对应框架挂在节点上的接管标志；`wait_for_timeout` 固定等待在慢机器上照样会输。

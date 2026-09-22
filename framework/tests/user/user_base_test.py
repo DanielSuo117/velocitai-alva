@@ -1,7 +1,7 @@
 # 文件用途：登录用户角色基类 —— class 内共享一个带登录态的 context，先校验登录态，再让每个用例从首页起点开始
 """登录用户角色基类。
 
-alva 只支持 Google / 邮箱验证码登录，没有 token 直登，所以这里不做登录动作：
+alva 只提供第三方（Google / X / Telegram / Discord）与邮箱验证码登录，没有 token 直登，所以这里不做登录动作：
 登录态由 framework/tools/save_auth_state.py 人工登录一次后存成 storageState，
 user_class_page 用它建 context，打开页面时就已是登录状态。
 

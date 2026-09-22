@@ -6,7 +6,7 @@
 - **代码侧**：`framework/`，Python + Playwright + pytest 的 POM 框架，带选择器自愈。
 - **harness 侧**：`CLAUDE.md` + `.claude/`（skills、rules、hooks、子代理、settings）+ `docs/`，
   全部采用 Claude Code 项目级原生格式，约束 AI 编程代理如何生成、运行、排查和沉淀测试代码。
-- **当前进度**：框架骨架已搭好，只封装了首页页面对象与角色基类，业务用例尚未编写。
+- **当前进度**：框架骨架已搭好，封装了首页、登录页（到邮箱输入为止）页面对象与角色基类，已有访客只读冒烟。
 
 ## 目录结构
 
@@ -37,6 +37,7 @@
     ├── core/                    # 框架核心：BasePage / BaseComponent / BaseTest、选择器自愈、日志
     ├── pages/
     │   ├── home_page.py         # HomePage：首页
+    │   ├── login_page.py        # LoginPage：登录页（到邮箱输入为止）
     │   └── components/
     │       └── sidebar_nav.py   # SidebarNav：全站左侧栏
     ├── tools/
@@ -73,7 +74,8 @@ allure serve reports/allure-results
 ```
 
 `--env` 必须显式传入，目前只有 `prod`。prod 是生产环境，用例只做只读操作。
-当前用例：`guest/test_guest_home.py` 是 6 条首页只读冒烟（不点发送、不点建议卡片与外部授权入口）；
+当前用例：`guest/test_guest_home.py` 是 6 条首页只读冒烟（不点发送、不点建议卡片与外部授权入口），
+`guest/test_guest_login.py` 是 3 条登录页只读冒烟（不提交邮箱、不点第三方登录）；
 `user/test_user_home.py` 校验登录态首页，没有登录态文件时整组 skip。新用例由
 [gen-page-test](./.claude/skills/gen-page-test/) 或 [add-regression-point](./.claude/skills/add-regression-point/) 生成。
 配置项、环境变量与排障见 [docs/setup.md](./docs/setup.md)。
@@ -87,7 +89,7 @@ allure serve reports/allure-results
 
 两个角色都在 class 内共享一个浏览器 context，每个用例开始前导航回首页并断言起点。
 
-alva.ai 只支持 Google 和邮箱验证码登录，没有可以直接注入的 token，所以登录用户的用例复用
+alva.ai 提供 Google / X / Telegram / Discord 第三方登录和邮箱验证码登录，都没有可以直接注入的 token，所以登录用户的用例复用
 Playwright storageState：用 `save_auth_state.py` 打开有头浏览器，人工登录一次后保存（权限 600）。
 推荐邮箱验证码，Google 可能拦截自动化工具启动的浏览器。
 
@@ -111,12 +113,14 @@ Playwright storageState：用 `save_auth_state.py` 打开有头浏览器，人�
 
 ## 当前覆盖范围
 
-只有首页（`/`）：
+首页（`/`）与登录页（`/login`，到邮箱输入为止）：
 
 - `HomePage`：打开首页、页面加载判定、Agent 分区 tab、顶部操作区、建议卡片、聊天输入框、登录状态判定，
   通过 `sidebar` 属性持有侧边栏组件。发消息、点建议卡片、Connect Portfolio / Connect IM 属写入或外部授权，
   只读冒烟不调用。
 - `SidebarNav`：全站共享的左侧栏，做成组件供后续页面复用。
+- `LoginPage`：登录页加载判定、回首页、登录方式（Google / X / Telegram / Discord / 邮箱）、邮箱框与提交按钮状态。
+  提交邮箱会发真实验证码、第三方按钮跳外部授权，只读冒烟不调用。
 
 页面对象与回归点清单分别见 [docs/pages-catalog.md](./docs/pages-catalog.md) 与
 [docs/regression-points.md](./docs/regression-points.md)。其他页面尚未封装。

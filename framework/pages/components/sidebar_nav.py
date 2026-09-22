@@ -1,13 +1,19 @@
 # 页面名称：全站左侧栏导航（组件）
 """alva.ai 左侧栏 —— 所有页面共用同一份，所以做成组件，而不是塞进某个页面对象。
 
-两种登录态渲染的是两条不同的前端分支（2026-09-22 读前端 bundle 确认）：
-- 访客态：Collapse / Logo / New Chat / Alva / Explore / Portfolio / Markets，底部是「Log in」。
-- 登录态：同样的头部与导航，但**没有「Alva」导航项**（前端传了 showAgentNavItem=false），
-  底部换成用户头像入口，中间多出会话历史列表。
-所以「回首页」请用 click_home()（Logo，两种状态都在），click_alva_agent() 只适用于访客态。
+两种登录态渲染的是两条不同的前端分支（2026-09-22 无头 Chromium 实测，1280x900 与 1024x768 下
+侧边栏都是展开可见的，结构一致）：
+- 访客态：Collapse / Logo / New Chat / Alva / Explore / Portfolio / Markets，底部是「Log in」
+  （外层 data-testid=sidebar-login）。
+- 登录态：同样的 Collapse / Logo / New Chat / Explore / Portfolio / Markets，但导航区**没有「Alva」项**；
+  下面依次是三个分区，标题都是 role=heading：
+    · Channels —— 标题里内嵌一个「New Channel」按钮，所以标题的可及名称是「Channels New Channel」；
+      列表第一项是内置的「Alva」频道（href=/，与访客态「Alva」导航项同名同指向）；
+    · Playbooks、Chats —— 列表是账号自己的 playbook / 会话，属于用户数据，不做定位符；
+  底部是用户菜单按钮（aria-haspopup=menu，内含 data-testid=sidebar-user 的头像 + 用户名 + 套餐）。
+所以「回首页」请用 click_home()（Logo，两种状态都在）。
 
-这里只能验证访客态：登录态的结构来自对前端源码的阅读，拿到登录态文件后应当实测补全。
+登录态判定以「用户菜单可见」为正向信号，「Log in 不可见」只做辅助，见 is_logged_in()。
 """
 from __future__ import annotations
 
@@ -15,12 +21,12 @@ from core.base.base_component import BaseComponent
 
 
 class SidebarNav(BaseComponent):
-    # 定位符 — 来自真实页面（2026-09-22，URL: https://alva.ai/）
+    # 定位符 — 来自真实页面（2026-09-22，URL: https://alva.ai/，访客态 + 登录态）
     # 根节点：侧边栏没有 nav/aside/role 语义节点，也没有 id / data-testid，class 又全是
     # Tailwind 工具类（禁用），只能用 P5 结构定位 —— 取「直接子 div 里就是 /new_chat 链接」
     # 的那一层容器。/new_chat 是路由，比样式稳定；两种登录态都把 New Chat 平铺在这一层，全页唯一。
     # 必须是纯 CSS、不能带 css= 前缀：自愈采快照时用 document.querySelector(ROOT) 圈定范围。
-    ROOT = "div:has(> div > a[href='/new_chat'])"   # P5: 侧边栏内容容器（头部、导航、底部账号区都在其内）
+    ROOT = "div:has(> div > a[href='/new_chat'])"   # P5: 侧边栏内容容器（头部、导航、分区、底部账号区都在其内）
 
     # 组件内的定位符都是相对 ROOT 的。注意 `role=` 引擎（不是 get_by_role）对 name 的匹配：
     # 不带标志与带 s 一样，都是区分大小写的**整串**匹配；带 i 是不区分大小写的整串匹配；都不是子串
@@ -30,7 +36,9 @@ class SidebarNav(BaseComponent):
     COLLAPSE_BUTTON = "role=button[name='Collapse' s]"   # P0: 折叠/展开侧边栏按钮（名称来自 title，折叠后仍叫 Collapse）
     LOGO_LINK = "css=button[title='Collapse'] ~ a[href='/']"   # P5: 顶部 Logo 链接，回首页（纯 SVG 无可及名称；两种登录态都在）
     NEW_CHAT_LINK = "role=link[name='New Chat' s]"   # P0: 「New Chat」新建会话链接（/new_chat）
-    AGENT_LINK = "role=link[name='Alva' s]"   # P0: 「Alva」导航项，即 Agent 首页（/；仅访客态渲染）
+    # 访客态是导航区的「Alva」项；登录态导航区没有它，但 Channels 分区的内置「Alva」频道同名同 href，
+    # 这个定位符在登录态同样命中 1 个（2026-09-22 实测）—— 所以它不能用来区分登录态。
+    AGENT_LINK = "role=link[name='Alva' s]"   # P0: 「Alva」入口，即 Agent 首页（/；访客态在导航区，登录态是 Channels 里的内置频道）
     EXPLORE_LINK = "role=link[name='Explore' s]"   # P0: 「Explore」导航项（/explore）
     PORTFOLIO_LINK = "role=link[name='Portfolio' s]"   # P0: 「Portfolio」导航项（/portfolio）
     MARKETS_BUTTON = "role=button[name='Markets' s]"   # P0: 「Markets」按钮（弹出 Search companies 搜索浮层，不跳路由）
@@ -39,14 +47,41 @@ class SidebarNav(BaseComponent):
     # 元素另有 data-testid="sidebar-login"（P4），P0 失效时可作替补。
     LOGIN_BUTTON = "role=button[name=/^Log in/]"   # P0: 底部「Log in」登录入口（仅访客态；点击跳 /login）
 
-    # 导航项可见文案 → 定位符，供用例按名字数据驱动校验「导航齐全」。
-    # 「Alva」只在访客态出现，登录态用例不要拿全量清单去断言。
-    NAV_ITEMS = {
+    # ── 登录态专属（访客态下 count()==0，2026-09-22 实测） ──────────────
+    # 用户菜单按钮的可及名称是「<用户名> <用户名> <套餐>」、id 是 radix 动态值，都不能用；
+    # 稳定的是它内部头像区的 data-testid=sidebar-user，外层 button 带 aria-haspopup=menu。
+    # 圈定到外层 button：可见性、以后若要点开菜单，作用对象都是它。
+    USER_MENU_BUTTON = "css=button[aria-haspopup='menu']:has([data-testid='sidebar-user'])"   # P4+P3: 底部用户菜单按钮（仅登录态；不含用户名）
+    # 分区标题：Channels 标题内嵌「New Channel」按钮，可及名称是「Channels New Channel」，只锚前缀；
+    # Playbooks / Chats 目前是整串，同样写前缀，免得哪天也塞进按钮就失效。
+    # 标题目前是 h1 级（level=1），级别属实现细节，不写进定位符。
+    CHANNELS_HEADING = "role=heading[name=/^Channels/]"   # P0: 「Channels」分区标题（仅登录态）
+    PLAYBOOKS_HEADING = "role=heading[name=/^Playbooks/]"   # P0: 「Playbooks」分区标题（仅登录态）
+    CHATS_HEADING = "role=heading[name=/^Chats/]"   # P0: 「Chats」分区标题（仅登录态）
+
+    # 导航项可见文案 → 定位符，供用例按名字数据驱动校验「导航齐全」。两种登录态各一套：
+    # 登录态导航区没有「Alva」（它挪进了 Channels 分区，属于频道列表，不算导航项）。
+    GUEST_NAV_ITEMS = {
         "New Chat": NEW_CHAT_LINK,
         "Alva": AGENT_LINK,
         "Explore": EXPLORE_LINK,
         "Portfolio": PORTFOLIO_LINK,
         "Markets": MARKETS_BUTTON,
+    }
+    USER_NAV_ITEMS = {
+        "New Chat": NEW_CHAT_LINK,
+        "Explore": EXPLORE_LINK,
+        "Portfolio": PORTFOLIO_LINK,
+        "Markets": MARKETS_BUTTON,
+    }
+    # 旧名保留给访客用例（按 NAV_ITEMS 迭代）；访客清单是两套的并集，is_nav_item_visible 按它查
+    NAV_ITEMS = GUEST_NAV_ITEMS
+
+    # 登录态分区标题可见文案 → 定位符。分区下的列表是用户数据，只校验标题
+    USER_SECTIONS = {
+        "Channels": CHANNELS_HEADING,
+        "Playbooks": PLAYBOOKS_HEADING,
+        "Chats": CHATS_HEADING,
     }
 
     # 登录态判定的「沉淀时间」：见 is_logged_in() 为什么要等
@@ -66,7 +101,8 @@ class SidebarNav(BaseComponent):
         self.click(self.NEW_CHAT_LINK)
 
     def click_alva_agent(self):
-        """点「Alva」导航项回 Agent 首页。仅访客态存在，登录态请用 click_home()。"""
+        """点「Alva」回 Agent 首页。访客态点的是导航项；登录态命中的是 Channels 里的内置
+        「Alva」频道（同样回 /）。跨状态回首页仍首选 click_home()。"""
         self.click(self.AGENT_LINK)
 
     def click_explore(self):
@@ -80,8 +116,17 @@ class SidebarNav(BaseComponent):
         self.click(self.MARKETS_BUTTON)
 
     def is_nav_item_visible(self, name: str) -> bool:
-        """name 取 NAV_ITEMS 的键，即导航项在页面上的可见文案。"""
+        """name 取 GUEST_NAV_ITEMS / USER_NAV_ITEMS 的键，即导航项在页面上的可见文案。"""
         return self.is_visible(self.NAV_ITEMS[name])
+
+    # ── 分区（仅登录态） ────────────────────────────────────────────
+    def is_section_visible(self, name: str, timeout: int | None = None) -> bool:
+        """登录态分区标题是否可见，name 取 USER_SECTIONS 的键。
+
+        访客态下分区本来就不存在，「不可见」是合法答案，所以不走自愈（理由同
+        is_login_button_visible）。
+        """
+        return self._wait_state(self.USER_SECTIONS[name], "visible", timeout)
 
     # ── 账号区 ──────────────────────────────────────────────────────
     def click_login(self):
@@ -89,33 +134,55 @@ class SidebarNav(BaseComponent):
         self.click(self.LOGIN_BUTTON)
 
     def is_login_button_visible(self, timeout: int | None = None) -> bool:
-        """「Log in」按钮是否可见。
+        """「Log in」按钮是否可见（等它出现）。
 
         「不可见」本身就是合法答案（登录态下它本来就不存在），所以不走自愈：
         自愈开启时，is_visible() 等不到元素会被当成定位失效，去页面上找个「像
-        登录按钮」的元素顶上 —— 登录态下极可能顶替到用户头像入口，把「已登录」
-        误判成「未登录」。
+        登录按钮」的元素顶上 —— 登录态下极可能顶替到用户菜单，把「已登录」
+        误判成「未登录」。要断言「没有 Log in」请用 is_login_button_absent()，
+        别拿本方法取反：它在登录态下要等满超时才返回 False。
         """
         return self._wait_state(self.LOGIN_BUTTON, "visible", timeout)
 
+    def is_login_button_absent(self, timeout: int | None = None) -> bool:
+        """「Log in」按钮是否不存在或不可见（等它消失，已不在时立即返回）。
+
+        只在侧边栏已渲染之后才有意义 —— 页面还没渲染时它同样「不在」。
+        """
+        timeout = self.LOGIN_SETTLE_TIMEOUT if timeout is None else timeout
+        return self._wait_state(self.LOGIN_BUTTON, "hidden", timeout)
+
+    def is_user_menu_visible(self, timeout: int | None = None) -> bool:
+        """底部用户菜单按钮是否可见（等它出现）。登录态的正向信号。
+
+        访客态下它本来就不存在，「不可见」是合法答案，不走自愈 —— 自愈可能把它
+        顶替成「Log in」按钮，把访客误判成已登录。
+        """
+        return self._wait_state(self.USER_MENU_BUTTON, "visible", timeout)
+
     def is_logged_in(self, settle_timeout: int | None = None) -> bool:
-        """依据侧边栏「Log in」按钮是否消失判断是否已登录。
+        """已登录 = 侧边栏已渲染 + 用户菜单可见（正向信号）+「Log in」不可见（辅助）。
 
-        两个顺序问题决定了这里的写法：
-        1. 必须先确认侧边栏渲染出来了 —— 页面还没渲染时「Log in」同样不可见，
-           直接判会把「没加载完」误判成「已登录」。
-        2. 已登录时要等「Log in」**消失**，而不是看一眼它在不在：登录态存在
-           JWT cookie 里，若服务端首屏按访客渲染、客户端水合后才切换，「Log in」
-           会先闪现一下。所以访客态要等满 settle_timeout 才返回 False（慢是
-           刻意的），登录态一旦确认按钮不在就立刻返回 True。
+        三步的顺序各有理由：
+        1. 先确认侧边栏渲染出来了（New Chat 两种状态都有）—— 否则后面两步的
+           「看不见」没有意义。
+        2. 以「用户菜单出现」为准，而不是「Log in 消失」：后者在页面没渲染完、
+           侧边栏整体被隐藏、登录入口改版等情况下同样成立，会把「没加载完」
+           误判成「已登录」；用户菜单只有登录态才渲染，是正向证据。
+           访客态要等满 settle_timeout 才返回 False（慢是刻意的：登录态的
+           用户菜单可能在水合后才出现）；登录态一出现就立刻进入下一步。
+        3. 再确认「Log in」不在：两者同时可见说明页面处于切换中间态或前端异常，
+           不算已登录。登录态下它本来就不在，这一步立即返回。
 
-        局限：前端只解析 JWT 不校验过期（useIsLogin = JWT 能解出 sub），服务端
-        已吊销但 cookie 未过期的会话这里仍会判为已登录。
+        局限：前端只解析 JWT 不校验过期，服务端已吊销但 cookie 未过期的会话
+        这里仍会判为已登录。
         """
         if not self.is_page_loaded():
             return False
         timeout = self.LOGIN_SETTLE_TIMEOUT if settle_timeout is None else settle_timeout
-        return self._wait_state(self.LOGIN_BUTTON, "hidden", timeout)
+        if not self.is_user_menu_visible(timeout):
+            return False
+        return self.is_login_button_absent(timeout)
 
     # ── 内部 ────────────────────────────────────────────────────────
     def _wait_state(self, selector: str, state: str, timeout: int | None) -> bool:

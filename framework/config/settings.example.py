@@ -27,7 +27,7 @@ def _env_bool(name: str, default: bool) -> bool:
 # 本文件位于 <项目根>/framework/config/，向上两级即项目根
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-# 登录态（Playwright storageState）存放目录。alva 只支持 Google / 邮箱验证码登录，
+# 登录态（Playwright storageState）存放目录。alva 只提供第三方（Google / X / Telegram / Discord）与邮箱验证码登录，
 # 没有 token 直登，只能人工登录一次后把 cookie 存下来复用
 # （生成：.venv/bin/python framework/tools/save_auth_state.py --env prod）。
 # 文件里是会话 cookie，等同账号凭据 —— 目录已在 .gitignore 中忽略。
@@ -39,7 +39,11 @@ AUTH_STATE_DIR = str(PROJECT_ROOT / ".auth")
 ENVS = {
     "prod": {
         "base_url": "https://alva.ai",       # 不带末尾斜杠，拼路径时统一写成 f"{base_url}/xxx"
+        # token 的本地存放处（Playwright storageState，权限 600），说明见上方 AUTH_STATE_DIR
         "storage_state": str(Path(AUTH_STATE_DIR) / "prod_user.json"),
+        # 承载登录态的 cookie 名（2026-09-22 实测）。免登时只注入这一个 cookie：
+        # domain 取 base_url 的主机名，path=/，SameSite=Lax
+        "auth_cookie": "authorization",
     },
 }
 

@@ -1,6 +1,6 @@
 """人工登录 alva 后保存登录态（Playwright storageState），供 user 角色用例复用。
 
-为什么要人工：alva 只支持 Google / 邮箱验证码登录，没有 token 直登。验证码和
+为什么要人工：alva 只提供第三方（Google / X / Telegram / Discord）与邮箱验证码登录，没有 token 直登。验证码和
 Google 的风控校验脚本既做不了也不该代劳，所以只自动化「开浏览器」和「存状态」
 两头，中间留给人。
 

@@ -12,7 +12,7 @@
 | 环境 | 只有 `prod`（生产），没有预发 |
 | 角色 | `guest` 访客（无登录态）/ `user` 登录用户（复用 storageState） |
 | 登录态 | `.auth/prod_user.json`（不入库），`.venv/bin/python framework/tools/save_auth_state.py --env prod` 人工登录后生成 |
-| 覆盖 | 仅首页：`HomePage` + 全站侧边栏组件 `SidebarNav`，角色基类 `GuestBaseTest` / `UserBaseTest`；其余页面未封装 |
+| 覆盖 | 首页 + 登录页（到邮箱输入为止）：`HomePage` / `LoginPage` + 全站侧边栏组件 `SidebarNav`，角色基类 `GuestBaseTest` / `UserBaseTest`；其余页面未封装 |
 
 ---
 
