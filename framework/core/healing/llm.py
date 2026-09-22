@@ -18,7 +18,7 @@ import urllib.error
 import urllib.request
 
 API_URL = "https://api.anthropic.com/v1/messages"
-DEFAULT_MODEL = "claude-sonnet-5"
+DEFAULT_MODEL = "claude-sonnet-5"   # 未配置 SELF_HEAL_MODEL 时使用，见 model_name()
 MAX_ELEMENTS = 60       # 喂给模型的元素上限，超出部分按出现顺序截断
 TIMEOUT = 30
 
@@ -34,6 +34,23 @@ def api_key() -> str:
         return (ANTHROPIC_API_KEY or "").strip()
     except Exception:
         return ""
+
+
+def model_name() -> str:
+    """按 环境变量 → config.settings 的顺序取模型名，与 api_key() 同一套优先级。
+
+    都没配（含旧配置文件里没有这一项）时退回 DEFAULT_MODEL —— 缺配置不该让
+    自愈报错，只是用默认模型。
+    """
+    m = os.environ.get("SELF_HEAL_MODEL", "").strip()
+    if m:
+        return m
+    try:
+        from config.settings import SELF_HEAL_MODEL  # type: ignore
+
+        return (SELF_HEAL_MODEL or "").strip() or DEFAULT_MODEL
+    except Exception:
+        return DEFAULT_MODEL
 
 
 def available() -> bool:
@@ -87,13 +104,17 @@ def build_prompt(intent, elements: list, tried: list) -> str:
 
 
 def infer(intent, elements: list, tried: list | None = None,
-          model: str = DEFAULT_MODEL) -> list:
-    """返回模型给出的候选选择器字符串列表。任何失败都返回空列表。"""
+          model: str | None = None) -> list:
+    """返回模型给出的候选选择器字符串列表。任何失败都返回空列表。
+
+    model 缺省时取 model_name()，调用方不必自己传。没有 key 时在发请求前就
+    返回，不产生任何网络调用。
+    """
     key = api_key()
     if not key or not elements:
         return []
     body = json.dumps({
-        "model": model,
+        "model": model or model_name(),
         "max_tokens": 1024,
         "messages": [{"role": "user", "content": build_prompt(intent, elements, tried or [])}],
     }).encode("utf-8")

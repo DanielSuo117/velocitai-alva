@@ -59,6 +59,15 @@ class SidebarNav(BaseComponent):
     PLAYBOOKS_HEADING = "role=heading[name=/^Playbooks/]"   # P0: 「Playbooks」分区标题（仅登录态）
     CHATS_HEADING = "role=heading[name=/^Chats/]"   # P0: 「Chats」分区标题（仅登录态）
 
+    # Channels 分区：标题 h1 与频道列表同在一个 div 里，没有语义节点 / testid，只能以「直接子 div 里有
+    # Channels 标题」的结构圈定分区，再在分区内按可及名称找频道（2026-09-22 实测各命中 1 个）。
+    # 点标题要点在文字 span 上：标题右端内嵌「New Channel」按钮，点中它会新建频道。
+    # 点标题文字没有任何效果（不折叠、不跳转，2026-09-22 实测），分区列表始终展开。
+    CHANNELS_TITLE = "css=div:has(> div > h1:has-text('Channels')) h1 > span:text-is('Channels')"   # P5+P1: 「Channels」分区标题文字（仅登录态）
+    CHANNEL_ALVA_LINK = "css=div:has(> div > h1:has-text('Channels')) >> role=link[name='Alva' s]"   # P5+P0: Channels 分区内置的「Alva」频道，即 Alva agent 首页（/）
+    # 当前所在频道的列表项外层带 data-active=true；在 /explore 等其他页面时 count()==0
+    CHANNEL_ALVA_ACTIVE = "css=div:has(> div > h1:has-text('Channels')) [data-active='true'] > a[href='/']"   # P5+P3: 「Alva」频道处于选中态
+
     # 导航项可见文案 → 定位符，供用例按名字数据驱动校验「导航齐全」。两种登录态各一套：
     # 登录态导航区没有「Alva」（它挪进了 Channels 分区，属于频道列表，不算导航项）。
     GUEST_NAV_ITEMS = {
@@ -74,7 +83,7 @@ class SidebarNav(BaseComponent):
         "Portfolio": PORTFOLIO_LINK,
         "Markets": MARKETS_BUTTON,
     }
-    # 旧名保留给访客用例（按 NAV_ITEMS 迭代）；访客清单是两套的并集，is_nav_item_visible 按它查
+    # 缺省指向访客态那一套（它是两套的并集），is_nav_item_visible 按它查；登录态请用 USER_NAV_ITEMS
     NAV_ITEMS = GUEST_NAV_ITEMS
 
     # 登录态分区标题可见文案 → 定位符。分区下的列表是用户数据，只校验标题
@@ -86,34 +95,36 @@ class SidebarNav(BaseComponent):
 
     # 登录态判定的「沉淀时间」：见 is_logged_in() 为什么要等
     LOGIN_SETTLE_TIMEOUT = 5000
+    # 频道选中态是前端状态更新，毫秒级
+    STATE_TIMEOUT = 5000
 
     # ── 头部 ────────────────────────────────────────────────────────
     def click_collapse(self):
         """折叠/展开侧边栏。是开关：再点一次恢复。"""
-        self.click(self.COLLAPSE_BUTTON)
+        self.click_hydrated(self.COLLAPSE_BUTTON)
 
     def click_home(self):
         """点 Logo 回首页。两种登录态都在，是跨状态回首页的首选入口。"""
-        self.click(self.LOGO_LINK)
+        self.click_hydrated(self.LOGO_LINK)
 
     # ── 导航 ────────────────────────────────────────────────────────
     def click_new_chat(self):
-        self.click(self.NEW_CHAT_LINK)
+        self.click_hydrated(self.NEW_CHAT_LINK)
 
     def click_alva_agent(self):
         """点「Alva」回 Agent 首页。访客态点的是导航项；登录态命中的是 Channels 里的内置
         「Alva」频道（同样回 /）。跨状态回首页仍首选 click_home()。"""
-        self.click(self.AGENT_LINK)
+        self.click_hydrated(self.AGENT_LINK)
 
     def click_explore(self):
-        self.click(self.EXPLORE_LINK)
+        self.click_hydrated(self.EXPLORE_LINK)
 
     def click_portfolio(self):
-        self.click(self.PORTFOLIO_LINK)
+        self.click_hydrated(self.PORTFOLIO_LINK)
 
     def click_markets(self):
         """打开 Markets 搜索浮层（Search companies），不离开当前页面。"""
-        self.click(self.MARKETS_BUTTON)
+        self.click_hydrated(self.MARKETS_BUTTON)
 
     def is_nav_item_visible(self, name: str) -> bool:
         """name 取 GUEST_NAV_ITEMS / USER_NAV_ITEMS 的键，即导航项在页面上的可见文案。"""
@@ -128,10 +139,24 @@ class SidebarNav(BaseComponent):
         """
         return self._wait_state(self.USER_SECTIONS[name], "visible", timeout)
 
+    def click_channels(self):
+        """点「Channels」分区标题文字。实测没有任何效果（分区不折叠、页面不跳转），只对应用户的操作步骤；
+        绝不能点到标题右端的「New Channel」按钮。"""
+        self.click_hydrated(self.CHANNELS_TITLE)
+
+    def click_channel_alva(self):
+        """点 Channels 分区里的「Alva」频道，进入 Alva agent 首页（/）。"""
+        self.click_hydrated(self.CHANNEL_ALVA_LINK)
+
+    def is_channel_alva_active(self, timeout: int | None = None) -> bool:
+        """Channels 里的「Alva」频道是否处于选中态（等它变为选中）。"""
+        return self._wait_state(self.CHANNEL_ALVA_ACTIVE, "visible",
+                                self.STATE_TIMEOUT if timeout is None else timeout)
+
     # ── 账号区 ──────────────────────────────────────────────────────
     def click_login(self):
         """访客态点「Log in」，页面跳到 /login。"""
-        self.click(self.LOGIN_BUTTON)
+        self.click_hydrated(self.LOGIN_BUTTON)
 
     def is_login_button_visible(self, timeout: int | None = None) -> bool:
         """「Log in」按钮是否可见（等它出现）。

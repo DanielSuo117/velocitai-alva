@@ -1,6 +1,6 @@
 ---
 paths:
-  - "framework/conftest.py"
+  - "tests/conftest.py"
   - "pytest.ini"
   - "framework/config/**"
   - "framework/core/logger.py"
@@ -9,7 +9,7 @@ paths:
 
 # 测试报告生成策略
 
-适用于：`framework/conftest.py` 中 `pytest_sessionfinish` 报告生成逻辑、`pytest.ini` 的报告参数、`framework/utils/report_generator.py` 报告工具（下文 `utils/` 均相对 `framework/`；骨架阶段尚未创建，落地时按本规则实现）。
+适用于：`tests/conftest.py` 中 `pytest_sessionfinish` 报告生成逻辑、`pytest.ini` 的报告参数、`framework/utils/report_generator.py` 报告工具（下文 `utils/` 均相对 `framework/`；骨架阶段尚未创建，落地时按本规则实现）。
 
 ---
 

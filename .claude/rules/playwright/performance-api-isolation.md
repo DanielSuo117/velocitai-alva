@@ -1,7 +1,7 @@
 ---
 paths:
   - "framework/pages/**"
-  - "framework/tests/**"
+  - "tests/**"
 ---
 
 # Performance API 跨用例隔离

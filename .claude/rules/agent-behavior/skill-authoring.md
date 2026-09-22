@@ -9,12 +9,16 @@ paths:
 
 ## P0.5 · Skill 正文不得写入项目专有标识
 
-禁止写死项目专有类名 / URL / DOM 类名 / 业务术语；必须抽象为通用占位符；项目级细节放 `.claude/rules/` 或 `docs/`。
+**触发**：在 skill 正文或 `references/` 里写类名、URL、DOM 类名、界面文案、业务术语时。
+
+禁止写死项目专有类名 / URL / DOM 类名 / 业务术语；必须抽象为通用占位符；项目级细节放 `docs/`（`.claude/rules/` 同样只写方法论，闸门 GEN001–GEN004 对两者一视同仁）。
 
 ❌ 在 skill 里写 "<角色>端 `/<具体路由>/*` 没有 `.<具体类名>`"
 ✅ skill 写 "用例跳转目标是否脱离门户布局？"
 
 ## P0.6 · 适用范围限定在项目实际技术栈
+
+**触发**：编写 skill 的 `description`、或在正文里声明适用的框架 / 工具组合时。
 
 只写项目实际用到的栈（Playwright + pytest），不泛化到未验证的组合。
 
@@ -22,6 +26,8 @@ paths:
 ✅ `description: Playwright + pytest ...`
 
 ## P0.7 · 新建 skill 必须完成四项配套
+
+**触发**：在 `.claude/skills/` 下新建 `<name>/SKILL.md` 时。
 
 1. 在 CLAUDE.md 路由表注册（链接写作 `./.claude/skills/<name>/`；frontmatter `name` 必须等于目录名，`description` 写清触发词）
 2. 相关 skill 加交叉引用

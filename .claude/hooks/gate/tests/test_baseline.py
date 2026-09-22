@@ -5,7 +5,7 @@
   - *-index.md / playwright-overview.md 无正反例（索引文件，STR003 豁免）
   - rules 带 Claude Code `paths:` frontmatter（元数据，不参与 STR003 / EVI 条款解析）
   - locator-replacer 中 8 处哈希类名全为反例教学（GEN003 豁免）
-  - skill-authoring.md 用文件级触发行覆盖 3 个条款（EVI002 文件级判定）
+  - GEN001–GEN004 覆盖 .claude/rules/**：现有 rules 的 ❌ 反例行豁免，正文不含站点 URL / 业务术语
   - CLAUDE.md → CLAUDE.local.md 为 gitignore 的可选文件（STR004/REG002 豁免）
   - docs/superpowers/** 为长篇流程文档（全量 STR 豁免）
 
@@ -19,6 +19,7 @@ from unittest import mock
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 from gate import runner
+from gate.checkers import genericity
 from gate.violation import Severity
 
 # tests → gate → hooks → .claude → 项目根
@@ -43,20 +44,16 @@ class TestBaseline(unittest.TestCase):
         asks = [v for v in self.violations if v.severity == Severity.ASK]
         self.assertEqual(asks, [], "audit 模式不应产生 ASK")
 
-    def test_audit_actually_scanned_files(self):
-        # 防止 glob 写错导致「零违规」其实是「零扫描」。
-        # 断言必须落在 audit 自身的产物上 —— 检查磁盘文件存在、或在测试里另跑一次
-        # glob，都只能证明文件系统没问题，证明不了 run_audit 走到过那些文件。
-        evi003 = [
-            v for v in self.violations
-            if v.code == "EVI003" and v.path.endswith("skill-authoring.md")
-        ]
-        self.assertGreaterEqual(
-            len(evi003), 3,
-            "audit 未产出 skill-authoring.md 的 EVI003 —— 说明它很可能根本没扫到 .claude/rules/，"
-            "此时其他断言的「零 BLOCK」是假绿。实际产出：\n"
-            + "\n".join(v.render() for v in self.violations),
-        )
+    def test_audit_runs_genericity_on_rules_and_skills(self):
+        # 防止 GEN 的作用域悄悄缩回 skills：rules 曾不在范围内，真实站点 URL 写进
+        # 规则被静默放行。断言必须落在 audit 自身的产物上 —— 换一个在 rules 与
+        # skills 正文里都出现、且稳定的通用词当黑名单，看 audit 是否两边都报出 GEN004。
+        term = (("networkidle", genericity._term_pattern("networkidle")),)
+        with mock.patch.object(genericity, "_wordlist", return_value=term):
+            hits = {v.path.split("/")[1] for v in runner.run_audit(REPO) if v.code == "GEN004"}
+        self.assertEqual(hits, {"rules", "skills"},
+                         "audit 没有对 .claude/rules/ 与 .claude/skills/ 都跑 GEN —— "
+                         "作用域缩水，或 glob 坏了导致零扫描")
 
 
 class TestAuditCoverage(unittest.TestCase):

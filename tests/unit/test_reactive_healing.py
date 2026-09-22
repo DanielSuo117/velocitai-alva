@@ -8,7 +8,7 @@
 那正是整套机制唯一不能失守的地方：**绝不把真失败变成假通过**。
 若本文件变红，说明自愈又回到了预探测语义，必须停用机制并修回。
 
-运行：python3 -m unittest discover -s framework/tests/unit -t framework
+运行：PYTHONPATH=framework python3 -m unittest discover -s tests/unit -t .
 """
 import sys
 import types
@@ -83,6 +83,11 @@ class TestReactiveHealing(unittest.TestCase):
         runtime.HEALED.clear()
         _DemoPage.self_heal_enabled = True
         self.addCleanup(setattr, _DemoPage, "self_heal_enabled", False)
+        # 不落盘：类默认值指向 reports/self-heal/，假页面的提案混进去会被
+        # selector-self-heal skill 当成真实漂移去复核
+        for attr in ("heal_artifact", "heal_fingerprints"):
+            setattr(_DemoPage, attr, "")
+            self.addCleanup(delattr, _DemoPage, attr)
 
     def _page_object(self, mode, tmpname):
         po = _DemoPage(_Page(mode))

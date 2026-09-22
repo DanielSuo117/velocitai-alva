@@ -197,6 +197,46 @@ class BasePage:
     def wait_for_load_state(self, state: str = "load", **kwargs):
         self.page.wait_for_load_state(state, **kwargs)
 
+    # React 水合时往它接管的 DOM 节点上挂 __reactProps$<随机串> 属性，有它才说明事件已绑定
+    REACT_HYDRATED_JS = "el => Object.keys(el).some(k => k.startsWith('__reactProps$'))"
+    HYDRATION_POLL_MS = 50
+    HYDRATION_TIMEOUT = 15000     # 与 DEFAULT_TIMEOUT 同量级；实测水合在可见后约 1~2s 内完成
+
+    def wait_for_hydrated(self, selector: str, timeout: int | None = None):
+        """等元素被前端（React）接管后再交互。服务端渲染的页面「可见」早于「可交互」。
+
+        水合前的点击、输入不报错，却被静默吞掉：点了 tab 不切换、填了输入框前端状态仍为空，
+        而且水合之后也不会补上。只看 is_visible / is_page_loaded 判断不出来，
+        见 .claude/rules/playwright/timeout-and-wait.md。已水合时首轮检查即返回，可以在每次交互前调用。
+
+        为什么轮询 locator 而不是对一个 element handle 做 wait_for_function：水合若遇到
+        服务端与客户端内容不一致，React 会换掉整个节点，旧 handle 永远等不到属性；
+        locator 每轮重新解析，拿到的总是当前节点。
+
+        只对 React 页面有意义。不是 React 渲染的元素会等满超时后抛 TimeoutError ——
+        宁可报错，也不能在没接管的节点上继续操作、制造一个「点了等于没点」的假步骤。
+        """
+        limit = self.HYDRATION_TIMEOUT if timeout is None else timeout
+        loc = self._locate(selector)
+        waited = 0
+        while True:
+            # evaluate 自带等待元素出现；剩余时间作为它的上限，整体不超过 limit
+            if loc.evaluate(self.REACT_HYDRATED_JS, timeout=max(limit - waited, 1)):
+                return
+            if waited >= limit:
+                raise TimeoutError(f"等待前端接管超时（{limit}ms）：{selector}")
+            self.page.wait_for_timeout(self.HYDRATION_POLL_MS)
+            waited += self.HYDRATION_POLL_MS
+
+    def click_hydrated(self, selector: str, **kwargs):
+        """先等前端接管、再点击 —— 服务端渲染（React 水合）页面上的点击一律用它。
+
+        页面导航后元素很快可见、is_page_loaded() 随即成立，但点在尚未水合的节点上会被静默吞掉：
+        不报错、不生效（2026-09-22 实测 Agent tab 约 1/12 的点击如此）。已水合时几乎不增加耗时。
+        """
+        self.wait_for_hydrated(selector)
+        self.click(selector, **kwargs)
+
     # ── 子类契约 ────────────────────────────────────────────────────
     def is_page_loaded(self) -> bool:
         """页面是否加载完成。子类必须实现，作为断言与等待的锚点。"""

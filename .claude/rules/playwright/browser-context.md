@@ -1,8 +1,8 @@
 ---
 paths:
-  - "framework/conftest.py"
+  - "tests/conftest.py"
   - "framework/core/base/base_test.py"
-  - "framework/tests/**/*_base_test.py"
+  - "tests/**/*_base_test.py"
 ---
 
 # 浏览器上下文

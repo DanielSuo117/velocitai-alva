@@ -10,9 +10,9 @@
 |----|------|
 | 目标站点 | https://alva.ai（AI 投资助手 SPA） |
 | 环境 | 只有 `prod`（生产），没有预发 |
-| 角色 | `guest` 访客（无登录态）/ `user` 登录用户（复用 storageState） |
-| 登录态 | `.auth/prod_user.json`（不入库），`.venv/bin/python framework/tools/save_auth_state.py --env prod` 人工登录后生成 |
-| 覆盖 | 首页 + 登录页（到邮箱输入为止）：`HomePage` / `LoginPage` + 全站侧边栏组件 `SidebarNav`，角色基类 `GuestBaseTest` / `UserBaseTest`；其余页面未封装 |
+| 角色 | 当前版本不区分角色：所有用例以同一登录账号运行，统一继承 `tests/base_test.py::AlvaBaseTest`（凭 token 免登：注入 `authorization` cookie 后访问 `/login` 直接进入首页） |
+| 登录 token | 来源依次为环境变量 `ALVA_TOKEN`、`.auth/prod_user.json`（不入库，绝不打印值）；`.venv/bin/python framework/tools/save_auth_state.py --env prod` 在真实 Chrome 人工登录后导出 |
+| 覆盖 | 首页（含 Alva agent 对话）+ 登录页（到邮箱输入为止）：`HomePage` / `LoginPage` + 全站侧边栏组件 `SidebarNav`；2 条用例（均继承 `AlvaBaseTest`）：`tests/test_login.py` 免登（只读，smoke）、`tests/test_alva_agent_chat.py` Channels → Alva 提问并等回复（**真实发送一条消息**，slow）；其余页面未封装 |
 
 ---
 
@@ -52,7 +52,7 @@
 | **测试报告生成策略** | [report-strategy](./.claude/rules/report-strategy/report-strategy.md) |
 | PageObject 清单 | [docs/pages-catalog.md](./docs/pages-catalog.md) |
 | 回归测试点 | [docs/regression-points.md](./docs/regression-points.md) |
-| 项目架构落地（角色 / 登录态） | [docs/architecture.md](./docs/architecture.md) |
+| 项目架构落地（基础测试类 / 登录态） | [docs/architecture.md](./docs/architecture.md) |
 | 环境搭建 | [docs/setup.md](./docs/setup.md) |
 
 ---
@@ -78,20 +78,21 @@
 在项目根执行，`--env` 必须由用户确认。
 
 ```bash
-# 按角色运行（用例文件为 framework/tests/<角色>/test_*.py）
-.venv/bin/pytest framework/tests/guest --env=prod        # 访客（只读，不需要登录态）
-.venv/bin/pytest framework/tests/user --env=prod         # 登录用户（需先生成登录态）
-.venv/bin/pytest framework/tests/guest --env=prod -v -k <关键字>
-HEADLESS=true .venv/bin/pytest framework/tests/guest --env=prod   # 无头（默认有头）
+# 用例在 tests/test_*.py，测试类继承 tests/base_test.py::AlvaBaseTest（凭 token 免登，需先有 token）
+.venv/bin/pytest tests/test_login.py --env=prod              # 访问登录页 → 免登进入首页（只读）
+.venv/bin/pytest tests/test_alva_agent_chat.py --env=prod    # Alva agent 对话：真实发送一条消息，跑前须用户同意
+.venv/bin/pytest --env=prod -m "not slow"                    # 全量（含 tests/unit、tests/e2e），跳过发消息的对话用例
+.venv/bin/pytest tests/test_login.py --env=prod -v -k <关键字>
+HEADLESS=true .venv/bin/pytest tests/test_login.py --env=prod   # 无头（默认有头）
 
-# 生成 / 刷新登录态（有头浏览器，人工登录后回车）
+# 获取 / 刷新登录 token（启动真实 Chrome，人工登录后自动导出并自检）
 .venv/bin/python framework/tools/save_auth_state.py --env prod
 
 # 报告（pytest.ini 默认写入 reports/allure-results，只保留最近一次运行）
 allure serve reports/allure-results
 
 # 框架与闸门自测（不访问站点）
-.venv/bin/python -m unittest discover -s framework/tests/unit -t framework
+PYTHONPATH=framework .venv/bin/python -m unittest discover -s tests/unit -t .
 python3 -m unittest discover -s .claude/hooks/gate/tests -t .claude/hooks
 python3 .claude/hooks/gate_cli.py --mode audit
 ```

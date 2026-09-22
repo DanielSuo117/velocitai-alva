@@ -1,27 +1,38 @@
 import pathlib
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 from gate.checkers import genericity
+from gate.violation import Severity
 
 P = pathlib.PurePosixPath
 SKILL = P(".claude/skills/demo/SKILL.md")
+RULE = P(".claude/rules/playwright/demo.md")
 
 
 def codes(vs):
     return sorted(v.code for v in vs)
 
 
+def words(*ws):
+    """构造与 _wordlist() 同形的返回值，让用例不依赖真实黑名单的内容。"""
+    return tuple((w, genericity._term_pattern(w)) for w in ws)
+
+
 class TestScope(unittest.TestCase):
-    def test_only_applies_to_skills(self):
-        vs = genericity.check(P(".claude/rules/x/y.md"), "见 https://intranet.corp.example/a\n")
-        self.assertEqual(codes(vs), [])
+    def test_applies_to_skills_and_rules(self):
+        # rules 曾不在范围内：把真实站点 URL 写进已有规则的 Edit 被静默放行
+        for rel in (SKILL, RULE, P(".claude/rules/x.md")):
+            with self.subTest(rel=str(rel)):
+                vs = genericity.check(rel, "见 https://intranet.corp.example/a\n")
+                self.assertEqual(codes(vs), ["GEN001"])
 
     def test_docs_and_old_layout_not_checked(self):
-        # docs/ 本来就该写项目事实；旧顶层 skills/ 已不是 harness 位置
-        for rel in ("docs/setup.md", "skills/demo/SKILL.md"):
+        # docs/ 本来就该写项目事实；旧顶层 skills/ rules/ 已不是 harness 位置
+        for rel in ("docs/setup.md", "skills/demo/SKILL.md", "rules/playwright/x.md"):
             with self.subTest(rel=rel):
                 vs = genericity.check(P(rel), "见 https://intranet.corp.example/a\n")
                 self.assertEqual(codes(vs), [])
@@ -204,6 +215,101 @@ class TestTeachingLineExemptionCoversAllCodes(unittest.TestCase):
         # ✅ 正例里写死真 URL 依然是写死真 URL —— 豁免只认反例标记
         vs = genericity.check(SKILL, '✅ 正例：page.goto("https://portal.example-x.net")\n')
         self.assertIn("GEN001", codes(vs))
+
+
+class TestRules(unittest.TestCase):
+    """rules 与 skills 用同一套判据：同样只写方法论，同样要配 ❌/✅（STR003 强制）。"""
+
+    def test_concrete_url_blocks_with_rule_label(self):
+        vs = genericity.check(RULE, 'page.goto("https://portal.acme-internal.net/")\n')
+        self.assertEqual(codes(vs), ["GEN001"])
+        self.assertEqual(vs[0].severity, Severity.BLOCK)
+        self.assertTrue(vs[0].message.startswith("rule 正文"), vs[0].message)
+
+    def test_counterexample_line_exempt(self):
+        # rules 的 ❌ 反例是强制项，闸门不能拦下它自己要求人写的反例
+        for line in ('❌ 反例：page.goto("https://portal.acme-internal.net/")',
+                     "# BAD: https://portal.acme-internal.net/",
+                     "禁止在规则里写 /Users/alice/proj"):
+            with self.subTest(line=line):
+                self.assertEqual(codes(genericity.check(RULE, line + "\n")), [])
+
+    def test_placeholders_pass(self):
+        # 规则的 ✅ 正例靠占位符与白名单域名保持可写
+        for line in ('page.goto(f"{base_url}/")',
+                     'page.goto("<BASE_URL>/login")',
+                     "✅ 正例：打开 https://example.com/login",
+                     "给定页面（https://...）生成页面对象",
+                     "见 https://playwright.dev/docs/locators"):
+            with self.subTest(line=line):
+                self.assertEqual(codes(genericity.check(RULE, line + "\n")), [])
+
+    def test_abs_path_and_hash_class_block(self):
+        self.assertEqual(codes(genericity.check(RULE, "打开 /Users/alice/repo/x.py\n")), ["GEN002"])
+        self.assertEqual(codes(genericity.check(RULE, 'BTN = "css=.sc-bdVaJa"\n')), ["GEN003"])
+
+    def test_skill_label_unchanged(self):
+        vs = genericity.check(SKILL, 'page.goto("https://portal.acme-internal.net/")\n')
+        self.assertEqual(codes(vs), ["GEN001"])
+        self.assertTrue(vs[0].message.startswith("skill 正文"), vs[0].message)
+
+
+class TestWordlist(unittest.TestCase):
+    """GEN004：不区分大小写、词首不接英文字母、词尾不限；只给 WARN。"""
+
+    def _check(self, rel, line, *ws):
+        with mock.patch.object(genericity, "_wordlist", return_value=words(*ws)):
+            return genericity.check(rel, line + "\n")
+
+    def test_rule_hit_is_warn(self):
+        vs = self._check(RULE, "输入框的可及名称以 Acme 开头", "acme")
+        self.assertEqual(codes(vs), ["GEN004"])
+        self.assertEqual(vs[0].severity, Severity.WARN)
+        self.assertIn("rule 正文", vs[0].message)
+
+    def test_skill_hit_is_warn(self):
+        vs = self._check(SKILL, "登录 Acme 后台", "acme")
+        self.assertEqual([(v.code, v.severity) for v in vs], [("GEN004", Severity.WARN)])
+
+    def test_case_insensitive_and_open_suffix(self):
+        for line in ("ACME_TOKEN 未设置", "见 acme.io 首页", "class AcmeBaseTest",
+                     "tests/test_acme_chat.py", "代码为acme的记录"):
+            with self.subTest(line=line):
+                self.assertEqual(codes(self._check(RULE, line, "acme")), ["GEN004"])
+
+    def test_letter_before_term_not_hit(self):
+        # 词首卡英文字母：salvage / galvanize 里的 alva 不是产品名
+        for line in ("salvage the run", "galvanize", "Salvador"):
+            with self.subTest(line=line):
+                self.assertEqual(codes(self._check(RULE, line, "alva")), [])
+
+    def test_multi_word_term(self):
+        self.assertEqual(codes(self._check(RULE, "名称是 Sign in Sign in", "Sign in Sign in")),
+                         ["GEN004"])
+
+    def test_teaching_lines_exempt(self):
+        for line in ("| 名称 | Acme |", "## Acme 专项", "# Acme 的注释",
+                     "- [ ] 正文没有 Acme", "❌ 反例：写死 Acme"):
+            with self.subTest(line=line):
+                self.assertEqual(codes(self._check(RULE, line, "acme")), [])
+
+    def test_docs_not_checked(self):
+        self.assertEqual(codes(self._check(P("docs/setup.md"), "Acme 首页", "acme")), [])
+
+
+class TestRealWordlist(unittest.TestCase):
+    """真实黑名单：必须真的有词，且不能误伤各 skill 讲方法论时用的通用 POM 名。"""
+
+    def test_wordlist_not_empty(self):
+        self.assertTrue(genericity._wordlist(), "wordlist.txt 为空，GEN004 形同虚设")
+
+    def test_generic_pom_names_not_flagged(self):
+        for line in ("home = HomePage(page)", "login = LoginPage(page)",
+                     "class BasePage:", "assert page.is_page_loaded()",
+                     "self.click_hydrated(self.SUBMIT_BUTTON)",
+                     'page.wait_for_load_state("networkidle")'):
+            with self.subTest(line=line):
+                self.assertEqual(codes(genericity.check(RULE, line + "\n")), [])
 
 
 if __name__ == "__main__":

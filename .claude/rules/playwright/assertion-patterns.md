@@ -1,7 +1,7 @@
 ---
 paths:
   - "framework/pages/**"
-  - "framework/tests/**"
+  - "tests/**"
 ---
 
 # 断言模式

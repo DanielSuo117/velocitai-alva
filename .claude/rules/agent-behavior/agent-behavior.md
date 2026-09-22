@@ -43,7 +43,7 @@
 
 ```
 用户：运行测试用例
-agent：pytest framework/tests/<role>/test_<role>_flow.py --env=prod -v   # 自行默认 prod
+agent：pytest tests/<role>/test_<role>_flow.py --env=prod -v   # 自行默认 prod
 ```
 
 ✅ 正例：
@@ -68,9 +68,9 @@ agent：请确认环境（当前仅 --env=prod，即生产）与范围：全量�
 ```
 ✅ 已完成：
 - 新增 framework/pages/xxx_page.py（新 PageObject）
-- 修改 framework/tests/<role>/test_xxx.py（补测试用例）
+- 修改 tests/<role>/test_xxx.py（补测试用例）
 建议 commit message：feat(pages): 新增 XX 页面对象 + 对应用例
-请手动执行：git add framework/pages/xxx_page.py framework/tests/<role>/test_xxx.py && git commit
+请手动执行：git add framework/pages/xxx_page.py tests/<role>/test_xxx.py && git commit
 ```
 
 ---
@@ -81,7 +81,7 @@ agent：请确认环境（当前仅 --env=prod，即生产）与范围：全量�
 
 **规则**：DOM 探索 / 定位符采集用 `agent-browser`（~200–400 tokens/次）；回归验证 / 断言校验用 Playwright MCP；`agent-browser` 未安装时全部降级到 Playwright MCP。
 
-P0.4.1–P0.4.4 详细反例/正例见 [browser-tool-usage.md](./browser-tool-usage.md)（处理 `framework/pages/**`、`framework/tests/**` 时按 `paths` 自动加载）。
+P0.4.1–P0.4.4 详细反例/正例见 [browser-tool-usage.md](./browser-tool-usage.md)（处理 `framework/pages/**`、`tests/**` 时按 `paths` 自动加载）。
 
 ---
 

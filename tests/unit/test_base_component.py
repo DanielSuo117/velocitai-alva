@@ -8,7 +8,7 @@ fill 这些操作走的是 _act()，**完全绕过那个覆盖**。结果 Dialog
 自愈开启时后果更重：快照会采到 root 之外的元素，把组件的定位符「修」成页面
 别处的一个无关元素。越界修复正是「顶替到无关元素」的典型路径。
 
-运行：python3 -m unittest discover -s framework/tests/unit -t framework
+运行：PYTHONPATH=framework python3 -m unittest discover -s tests/unit -t .
 """
 import sys
 import types
@@ -130,6 +130,11 @@ class TestComponentHealingScope(unittest.TestCase):
         _Dialog.self_heal_enabled = True
         self.addCleanup(setattr, _Dialog, "self_heal_enabled", False)
         self.addCleanup(runtime.HEALED.clear)
+        # 不落盘：类默认值指向 reports/self-heal/，假页面的提案混进去会被
+        # selector-self-heal skill 当成真实漂移去复核
+        for attr in ("heal_artifact", "heal_fingerprints"):
+            setattr(_Dialog, attr, "")
+            self.addCleanup(delattr, _Dialog, attr)
 
     def _dialog(self, page):
         dlg = _Dialog(page)

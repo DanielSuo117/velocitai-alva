@@ -10,7 +10,7 @@
 会把它记下来。断言「点成功了」不够，必须断言「点的是哪一个」。
 
 运行（需要浏览器）：
-    pytest framework/tests/e2e --env=pre --self-heal=on
+    pytest tests/e2e --env=prod --self-heal=on
 不加 --self-heal 时整组跳过。
 """
 from pathlib import Path
@@ -50,6 +50,8 @@ def heal_env(request, tmp_path, monkeypatch):
         pytest.skip("本组用例验证自愈行为，需 --self-heal=on|strict|auto")
     monkeypatch.setattr(BasePage, "heal_fingerprints", str(tmp_path / "fp.json"))
     monkeypatch.setattr(BasePage, "heal_artifact", str(tmp_path / "proposals.jsonl"))
+    # 用 --self-heal=auto 跑时也不许写回：否则会改写本文件里的定位符常量并留下 .heal-bak
+    monkeypatch.setattr(BasePage, "self_heal_patch", False)
 
 
 @pytest.fixture

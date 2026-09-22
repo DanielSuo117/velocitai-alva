@@ -102,6 +102,21 @@ class TestRunWrite(unittest.TestCase):
                           old_string="❌", new_string="", replace_all=False)
         self.assertNotIn("STR003", codes(runner.run_write(p)))
 
+    def test_edit_inserting_url_into_rule_blocks(self):
+        # 回放过的真实漏网场景：往已有规则里 Edit 进一个真实站点 URL，曾被静默放行
+        target = self.root / ".claude" / "rules" / "r.md"
+        target.write_text("❌ 反例\n✅ 正例\n旧内容\n", encoding="utf-8")
+        p = self._payload("Edit", ".claude/rules/r.md", old_string="旧内容",
+                          new_string='page.goto("https://portal.acme-internal.net/")')
+        self.assertEqual(codes(runner.run_write(p)), ["GEN001"])
+
+    def test_clean_edit_of_rule_passes(self):
+        target = self.root / ".claude" / "rules" / "r.md"
+        target.write_text("❌ 反例\n✅ 正例\n旧内容\n", encoding="utf-8")
+        p = self._payload("Edit", ".claude/rules/r.md", old_string="旧内容",
+                          new_string='page.goto(f"{base_url}/")   # 地址来自配置')
+        self.assertEqual(codes(runner.run_write(p)), [])
+
     def test_edit_with_unmatched_old_string_fails_open(self):
         target = self.root / ".claude" / "rules" / "r.md"
         target.write_text("✅ 只有正例\n", encoding="utf-8")
@@ -160,6 +175,12 @@ class TestRunCommit(unittest.TestCase):
         self._stage(".claude/rules/r.md")
         vs = runner.run_commit(self.root)
         self.assertIn("STR003", codes(vs))
+
+    def test_staged_rule_with_url_reported(self):
+        (self.root / ".claude" / "rules" / "r.md").write_text(
+            "❌ 反例\n✅ 正例\n见 https://portal.acme-internal.net/\n", encoding="utf-8")
+        self._stage(".claude/rules/r.md")
+        self.assertEqual(codes(runner.run_commit(self.root)), ["GEN001"])
 
     def test_empty_staged_set_returns_empty(self):
         vs = runner.run_commit(self.root)
@@ -222,6 +243,12 @@ class TestRunAudit(unittest.TestCase):
 
     def test_none_root_returns_empty(self):
         self.assertEqual(runner.run_audit(None), [])
+
+    def test_rule_with_url_reported(self):
+        (self.root / ".claude" / "rules" / "bad.md").write_text(
+            "❌ 反例\n✅ 正例\n见 https://portal.acme-internal.net/\n", encoding="utf-8")
+        vs = runner.run_audit(self.root)
+        self.assertEqual([(v.code, v.path) for v in vs], [("GEN001", ".claude/rules/bad.md")])
 
     def test_scans_new_layout_and_ignores_old(self):
         # 同样的坏 skill 放在新旧两处：只有 .claude/skills/ 下那份应被扫到

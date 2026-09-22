@@ -78,7 +78,7 @@ class <PageName>(BasePage):
 
 ```bash
 # 在对应角色的回归文件中跑指定用例（运行前向用户确认 --env，见 agent-behavior P0.2）
-pytest framework/tests/<role>/test_<role>_flow.py --env=<pre|prod> -v -k "test_<story_name>"
+pytest tests/<role>/test_<role>_flow.py --env=<pre|prod> -v -k "test_<story_name>"
 ```
 
 ### Step 5: 同步更新文档

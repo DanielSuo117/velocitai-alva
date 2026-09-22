@@ -9,7 +9,7 @@ key、真的拼 prompt、真的解析 Messages API 响应格式、真的在真�
 完全相同，class 全是构建哈希。规则拼得出的候选一个都不唯一，模型才有出场
 的理由 —— 它能用结构上下文（main / nav）把二者分开，规则不会拼这种选择器。
 
-运行：pytest framework/tests/e2e/test_llm_healing_e2e.py --env=pre --self-heal=on
+运行：pytest tests/e2e/test_llm_healing_e2e.py --env=prod --self-heal=on
 """
 import json
 import io

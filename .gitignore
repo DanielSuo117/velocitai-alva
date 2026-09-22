@@ -9,10 +9,12 @@ reports/
 # 本机配置（可能填了 API key、指向私人账号的登录态），由 settings.example.py 复制
 framework/config/settings.py
 
-# 登录态（Playwright storageState）
-# 由 framework/tools/save_auth_state.py 人工登录后生成，里面是 alva 的会话
-# cookie（含 JWT），拿到它就等于登进了那个账号。不带前导斜杠：无论 settings
-# 把目录指到哪一层，只要叫 .auth 都挡住。
+# 登录 token 的本地存放处，整个目录都不入库。由 framework/tools/save_auth_state.py
+# 人工登录后生成，含：
+#   <env>_user.json          Playwright storageState，里面的 authorization cookie（JWT）
+#                            就是免登 token，拿到它就等于登进了那个账号；
+#   chrome-profile-<env>/    工具启动真实 Chrome 用的独立 profile，同样存着登录会话。
+# 不带前导斜杠：无论 settings 把目录指到哪一层，只要叫 .auth 都挡住。
 .auth/
 
 # Claude Code 的本地权限决定与私有备忘。不能只靠用户的全局 ignore 挡着 ——

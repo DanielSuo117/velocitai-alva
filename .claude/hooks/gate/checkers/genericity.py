@@ -1,6 +1,9 @@
-"""维度③ 通用化检测 —— GEN001–GEN004，仅作用于 .claude/skills/**。
+"""维度③ 通用化检测 —— GEN001–GEN004，作用于 .claude/skills/** 与 .claude/rules/**。
 
-skill 是可跨项目复用的方法论；rules / docs 允许写项目事实（URL、路径），不在此检查。
+skills 与 rules 都只写项目无关的方法论（CLAUDE.md 约定）；站点 URL、界面文案、类名等
+项目事实一律放 docs/，docs 不在此检查。rules 曾不在范围内，一次把真实站点 URL 和业务
+类名写进已有规则的 Edit 因此被静默放行。两类文件用同一套判据与反例豁免。
+GEN004 的黑名单在 ../wordlist.txt，匹配语义见 _term_pattern。
 """
 from __future__ import annotations
 
@@ -66,25 +69,38 @@ def _is_counterexample_line(line: str) -> bool:
     return any(mark in line for mark in _EXEMPT_MARKERS)
 
 
+def _term_pattern(word: str):
+    """业务术语的匹配规则：不区分大小写；词首前一个字符不能是英文字母，词尾不限。
+
+    不区分大小写，一个 acme 就能覆盖 Acme / ACME_TOKEN / acme.io；词尾放开，
+    AcmeBaseTest、test_acme_xxx 照样命中；词首卡住英文字母，是为了不在普通单词
+    内部命中（黑名单写 alva 时不误中 salvage）。中文、下划线、标点都算边界。
+    """
+    return re.compile(r"(?<![A-Za-z])" + re.escape(word), re.IGNORECASE)
+
+
 @functools.lru_cache(maxsize=1)
 def _wordlist():
     try:
         lines = _WORDLIST.read_text(encoding="utf-8").splitlines()
     except Exception:
         return ()
-    return tuple(w for w in (l.strip() for l in lines) if w and not w.startswith("#"))
+    words = (w for w in (l.strip() for l in lines) if w and not w.startswith("#"))
+    return tuple((w, _term_pattern(w)) for w in words)
 
 
 def check(rel, text, root=None):
-    if context.classify(rel) != context.SKILL:
+    kind = context.classify(rel)
+    if kind not in (context.SKILL, context.RULE):
         return []
     rel_s = str(rel)
+    label = "skill" if kind == context.SKILL else "rule"
     out = []
     words = _wordlist()
 
     for i, line in enumerate(text.splitlines(), 1):
         # 反例教学豁免作用于 GEN001–GEN004，不只 GEN003：本项目规范要求每条规则
-        # 配 ❌ 反例（含 P0.5「skill 正文不得写入项目专有标识」这一条本身），
+        # 配 ❌ 反例（rules 文件由 STR003 强制；含 P0.5「skill 正文不得写入项目专有标识」这一条本身），
         # 若只豁免 GEN003，闸门就会拦下它自己要求人写的那些反例。
         # 但两组用的判据宽窄不同 —— 见 _is_counterexample_line 的说明。
         if not _is_counterexample_line(line):
@@ -96,14 +112,14 @@ def check(rel, text, root=None):
                     continue
                 out.append(Violation(
                     "GEN001", Severity.BLOCK, rel_s, i,
-                    f"skill 正文出现具体 URL：{url}",
+                    f"{label} 正文出现具体 URL：{url}",
                     f"抽象为占位符（如 <目标页面URL>）；项目级 URL 放 {context.DOCS_DIR}/ 或 framework/config/",
                 ))
 
             for m in _ABS_PATH_RE.finditer(line):
                 out.append(Violation(
                     "GEN002", Severity.BLOCK, rel_s, i,
-                    f"skill 正文出现本地绝对路径：{m.group(0)}",
+                    f"{label} 正文出现本地绝对路径：{m.group(0)}",
                     "改为相对仓库根的路径，或抽象为占位符",
                 ))
 
@@ -114,15 +130,15 @@ def check(rel, text, root=None):
         if m:
             out.append(Violation(
                 "GEN003", Severity.BLOCK, rel_s, i,
-                f"skill 正文出现哈希类名：{m.group(0)}",
+                f"{label} 正文出现哈希类名：{m.group(0)}",
                 "哈希类名每次构建都会变；升级到 P0 role 或 P1 text 定位",
             ))
 
-        for w in words:
-            if w in line:
+        for w, pat in words:
+            if pat.search(line):
                 out.append(Violation(
                     "GEN004", Severity.WARN, rel_s, i,
-                    f"skill 正文出现业务术语「{w}」",
-                    "skill 须保持项目无关；业务术语抽象为占位符或移入 docs/",
+                    f"{label} 正文出现业务术语「{w}」",
+                    f"skills / rules 须保持项目无关；业务术语抽象为占位符，事实移入 {context.DOCS_DIR}/",
                 ))
     return out

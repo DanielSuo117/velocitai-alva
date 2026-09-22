@@ -27,10 +27,21 @@ def _env_bool(name: str, default: bool) -> bool:
 # 本文件位于 <项目根>/framework/config/，向上两级即项目根
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-# 登录态（Playwright storageState）存放目录。alva 只提供第三方（Google / X / Telegram / Discord）与邮箱验证码登录，
-# 没有 token 直登，只能人工登录一次后把 cookie 存下来复用
-# （生成：.venv/bin/python framework/tools/save_auth_state.py --env prod）。
-# 文件里是会话 cookie，等同账号凭据 —— 目录已在 .gitignore 中忽略。
+# 登录 token 的本地存放目录。整个目录已在 .gitignore 中忽略，token 不入库。
+#
+# alva 的登录入口只有第三方（Google / X / Telegram / Discord）与邮箱验证码，自动化做不了；
+# 但登录成功后的登录态就是站点域下名为 authorization 的 cookie（2026-09-22 实测：path=/、
+# SameSite=Lax、非 httpOnly、非 secure，签发后约 21 天到期）。往一个全新的浏览器 context
+# 里只注入这一个 cookie，再访问 /login，前端会直接把人送回首页且为登录态 —— 不经过登录表单，
+# 也不经过 Cloudflare Turnstile 人机验证。这就是用例的「凭 token 免登」。
+#
+# 用例按以下优先级取 token（tests/conftest.py::auth_token）：
+#   1. 环境变量 ALVA_TOKEN，值为 authorization cookie 的值（临时换号 / CI 注入用）；
+#   2. 下方 storage_state 指向的 Playwright storageState 文件，只从中取 auth_cookie 那一个 cookie。
+# 文件的生成：Playwright 自己启动的浏览器过不了 Turnstile，工具改为启动本机真实的
+# Google Chrome，人工登录一次后导出（Chrome profile 也留在本目录，下次可免重登）：
+#   .venv/bin/python framework/tools/save_auth_state.py --env prod
+# token 等同账号凭据：不打印、不入库、不外传。
 AUTH_STATE_DIR = str(PROJECT_ROOT / ".auth")
 
 # 环境配置。目前 alva 只有生产环境，没有 pre。
@@ -76,3 +87,6 @@ SELF_HEAL_FINGERPRINTS = str(PROJECT_ROOT / "reports" / "self-heal" / "fingerpri
 # （见 core/healing/llm.py::api_key）。刻意写成字面量而不是 os.environ.get(...)：
 # 在导入时把环境变量冻结进来，会让用例里 monkeypatch 掉的 key 仍从这里漏回去。
 ANTHROPIC_API_KEY = ""
+# 自愈推理用的模型 ID。留空则用 core/healing/llm.py::DEFAULT_MODEL；环境变量
+# SELF_HEAL_MODEL 优先于这里（见 llm.py::model_name）。同样写成字面量，理由同上。
+SELF_HEAL_MODEL = ""

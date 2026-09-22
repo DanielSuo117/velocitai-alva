@@ -6,7 +6,7 @@
 
 - Python 3.10+
 - 能访问 https://alva.ai 的网络
-- 生成登录态需要一个可登录 alva.ai 的账号（推荐邮箱验证码登录）
+- 获取登录 token 需要一个可登录 alva.ai 的账号，以及本机安装的 Google Chrome
 
 ## 安装
 
@@ -53,45 +53,57 @@ cp framework/config/settings.example.py framework/config/settings.py
 
 ## 登录态
 
-`user` 角色的用例复用 Playwright storageState，第一次跑之前、以及登录态失效后，都要重新生成：
+所有业务用例（`tests/test_*.py`，继承 `AlvaBaseTest`）都**凭 token 免登**：只注入 alva.ai 的 `authorization` cookie，
+访问 `/login` 后前端直接送回首页（已登录）。
+第一次跑之前、以及 token 过期后，获取一次：
 
 ```bash
 .venv/bin/python framework/tools/save_auth_state.py --env prod
 ```
 
-脚本打开有头浏览器（不受 `HEADLESS` 影响）并进入 `/login`。在浏览器里手动登录，看到首页后回到终端按回车；
-脚本回到首页确认已登录后，才把登录态保存到 `.auth/prod_user.json`（权限 600）。没检测到登录会让你继续登、
-再按回车，不必重跑脚本；Ctrl+C 放弃则不写文件。
+- 脚本启动本机**真实 Google Chrome**（配置目录在 `.auth/chrome-profile-prod`），打开 `/login`，你在里面人工登录，
+  邮箱验证码或 Google 都行。登录期间脚本只轮询 Chrome 调试接口里的页面 URL，不接管页面，以免干扰 Cloudflare 人机验证。
+- 回到首页后，脚本导出到 `.auth/prod_user.json`（权限 600），打印 cookie 的到期时间（不打印值），关闭它启动的 Chrome，
+  再用无头浏览器只注入 token 访问 `/login`，自检能否免登进入首页。
+- 已经有一个用 `--remote-debugging-port` 启动并登录好的 Chrome 时，用 `--attach <端口>` 直接导出，不启动也不关闭它。
+- 非 macOS 或 Chrome 不在默认位置：`--chrome <路径>` 或环境变量 `CHROME_PATH`。
+- 不用 Playwright 启动的浏览器登录，是因为它过不了 Cloudflare 人机验证（邮箱验证码之后、Google 回调页上都有）。
 
-推荐邮箱验证码登录 —— Google 常以「此浏览器可能不安全」拦截由自动化工具启动的浏览器。
+token 来源依次为环境变量 `ALVA_TOKEN`、`.auth/prod_user.json`。CI 上把 token 配成 secret 注入 `ALVA_TOKEN` 即可，不需要文件。
 
-- 文件等同于账号凭据：`.auth/` 不入库，不要贴进 issue、日志或聊天。
-- 文件不存在时，`user` 用例被 skip，输出里会提示上面的命令。
-- 文件存在但失效时，`user` 用例直接 fail 并提示重新生成。
+- token 等同账号凭据：`.auth/` 不入库，不要贴进 issue、日志或聊天。
+- 没有 token：业务用例被 skip，输出里会提示两种提供方式。
+- token 无效或过期（cookie 约在登录 21 天后到期）：业务用例直接 fail（「token 无效或已过期」）并提示重新获取。
 
 判定方式见 [architecture.md 的「登录态」一节](./architecture.md#登录态)。
 
 ## 运行测试
 
 `--env` 必须显式传入（`conftest.py` 里 `required=True`）。prod 是生产环境：用例只做只读操作，
-不发送消息、不提交数据、不点会触发外部授权或付费的按钮；要写入数据的用例须先征得同意。
+不提交数据、不点会触发外部授权或付费的按钮。唯一例外是 `test_alva_agent_chat.py`：它会真实发送一条消息
+（用户 2026-09-22 明确要求），每跑一次账号的 Alva 频道就多一轮对话。其他要写入数据的用例须先征得同意。
 
 ```bash
-# 访客（不需要登录态）
-.venv/bin/pytest framework/tests/guest --env=prod
+# 免登冒烟（只读）：访问登录页 → 直接进入首页
+.venv/bin/pytest tests/test_login.py --env=prod
 
-# 登录用户（需先生成登录态）
-.venv/bin/pytest framework/tests/user --env=prod
+# Alva agent 对话：Channels → Alva → 发送提示词 → 等回复（真实发送一条消息，回复实测约 30～42s）
+.venv/bin/pytest tests/test_alva_agent_chat.py --env=prod
+
+# 全量（pytest.ini 的 testpaths=tests，连同 tests/unit、tests/e2e 一起收集）
+.venv/bin/pytest --env=prod
+# 全量但跳过标记为 slow 的对话用例，不发消息
+.venv/bin/pytest --env=prod -m "not slow"
 
 # 按关键字筛选
-.venv/bin/pytest framework/tests/guest --env=prod -v -k <关键字>
+.venv/bin/pytest tests/test_login.py --env=prod -v -k <关键字>
 
 # 无头运行（默认有头）
-HEADLESS=true .venv/bin/pytest framework/tests/guest --env=prod
+HEADLESS=true .venv/bin/pytest tests/test_login.py --env=prod
 ```
 
-`framework/tests/user` 在 `.auth/prod_user.json` 不存在时整组 skip（原因里给出生成命令）；
-文件存在但会话已过期时直接 fail，提示重新生成。
+两条业务用例都需要 token：拿不到（`ALVA_TOKEN` 与 `.auth/prod_user.json` 都没有）时 skip，原因里给出获取方式；
+token 无效或过期时直接 fail，提示重新获取。`tests/e2e` 不加 `--self-heal=on|strict|auto` 时整组 skip。
 
 ### 选择器自愈
 
@@ -114,9 +126,10 @@ allure serve reports/allure-results
 不访问站点，改动 `framework/core/` 或 `.claude/hooks/` 后跑：
 
 ```bash
-.venv/bin/python -m unittest discover -s framework/tests/unit -t framework
+PYTHONPATH=framework .venv/bin/python -m unittest discover -s tests/unit -t .
 python3 -m unittest discover -s .claude/hooks/gate/tests -t .claude/hooks
 python3 .claude/hooks/gate_cli.py --mode audit      # rc=0 即无 BLOCK
+.venv/bin/pytest tests/e2e --env=prod --self-heal=on   # 自愈 e2e：只打开本地 HTML 夹具
 ```
 
 ## 落库闸门

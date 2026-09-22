@@ -1,7 +1,7 @@
 ---
 paths:
   - "framework/pages/**"
-  - "framework/tests/**"
+  - "tests/**"
 ---
 
 # 定位符策略
@@ -129,23 +129,23 @@ FILTER_BTN = 'css=.list-content >> text="筛选"'   # 精确匹配，不命中�
 
 **触发**：定位符常量写成 `role=<role>[name='...']` 字符串（BasePage 走 `page.locator(字符串)`），且可及名称比你写的更长，或大小写不同。
 
-**失败现象**：可及名称为「Log in Log in」（头像 alt + 文字各一份）的按钮，写 `role=button[name='Log in']` 命中 0 个；
-aria-label 为「Ask Alva anything. @ for context, / for skills」的输入框，写前缀也命中 0 个 —— 等满超时后报元素找不到。
+**失败现象**：按钮里头像图片的 alt 与按钮文字相同，可及名称变成「<按钮文字> <按钮文字>」，写 `role=button[name='<按钮文字>']` 命中 0 个；
+aria-label 为「<提示语>. <操作提示>」这类长串的输入框，只写 `<提示语>` 前缀也命中 0 个 —— 等满超时后报元素找不到。
 Playwright 1.63 实测：字符串 `role=` 引擎的 name 区分大小写、必须整串相等；只有 `page.get_by_role(name=...)` 才是不区分大小写的子串匹配，两者语义不同，不能互相类推。
 
 ❌ 反例：
 
 ```python
-LOGIN_BUTTON = "role=button[name='Log in']"            # 可及名称是「Log in Log in」→ 0 个
-CHAT_INPUT = "role=textbox[name='Ask Alva anything']"  # 只写了前缀 → 0 个
+LOGIN_BUTTON = "role=button[name='<按钮文字>']"      # 可及名称是「<按钮文字> <按钮文字>」→ 0 个
+CHAT_INPUT = "role=textbox[name='<提示语>']"         # 只写了前缀 → 0 个
 ```
 
 ✅ 正例：
 
 ```python
-LOGIN_BUTTON = "role=button[name=/^Log in/]"            # 正则：前缀匹配
-CHAT_INPUT = "role=textbox[name=/^Ask Alva anything/]"  # 后半段操作提示更易变，只锁前缀
-COLLAPSE_BUTTON = "role=button[name='Collapse']"        # 名称完整且稳定时，精确写法即可
+LOGIN_BUTTON = "role=button[name=/^<按钮文字>/]"     # 正则：前缀匹配
+CHAT_INPUT = "role=textbox[name=/^<提示语>/]"        # 后半段操作提示更易变，只锁前缀
+CLOSE_BUTTON = "role=button[name='关闭']"            # 名称完整且稳定时，精确写法即可
 ```
 
 **排查信号**：`role=` 定位符超时，但 agent-browser snapshot 里明明有这个 role 和相近的名称 → 对照 snapshot 里的完整可及名称，改成整串或 `/^前缀/` 正则。

@@ -82,10 +82,10 @@ paths:
 | STR004 | Markdown 链接指向不存在的路径 | 修正相对路径层级，或补上目标文件 |
 | STR005 | 文件超过 300 行 | 建议拆分（仅提示，不阻断） |
 | STR006 | 文件超过 500 行 | 拆分为多个按主题聚焦的文件 |
-| GEN001 | skill 正文出现具体 URL | 抽象为占位符；项目级 URL 放 `docs/` 或 `framework/config/` |
-| GEN002 | skill 正文出现本地绝对路径 | 改为相对仓库根的路径 |
-| GEN003 | skill 正文出现哈希类名 | 升级到 P0 role 或 P1 text 定位 |
-| GEN004 | skill 正文出现业务术语黑名单词 | 抽象为占位符或移入 `docs/`（仅提示） |
+| GEN001 | skill / rule 正文出现具体 URL | 抽象为占位符；项目级 URL 放 `docs/` 或 `framework/config/` |
+| GEN002 | skill / rule 正文出现本地绝对路径 | 改为相对仓库根的路径 |
+| GEN003 | skill / rule 正文出现哈希类名 | 升级到 P0 role 或 P1 text 定位 |
+| GEN004 | skill / rule 正文出现业务术语黑名单词（`.claude/hooks/gate/wordlist.txt`） | 抽象为占位符或移入 `docs/`（仅提示） |
 | REG001 | skill 未在 CLAUDE.md 路由表注册 | 在路由表新增一行 |
 | REG002 | 路由表链接指向不存在的路径 | 修正链接或补上目标文件 |
 | EVI001 | 在 `.claude/skills/` 或 `.claude/rules/` 下新建文件 | 按 P0.10 先提案（需用户确认，非错误） |

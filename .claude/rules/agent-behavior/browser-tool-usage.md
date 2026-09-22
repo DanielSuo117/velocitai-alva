@@ -3,7 +3,7 @@
 # 选型总则（P0.4 摘要）已在常驻的 agent-behavior.md 中。
 paths:
   - "framework/pages/**"
-  - "framework/tests/**"
+  - "tests/**"
 ---
 
 # 浏览器工具使用规则（P0.4 系列详细反例/正例）

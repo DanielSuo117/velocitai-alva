@@ -33,7 +33,7 @@ tools: Read, Grep, Glob, Edit, mcp__code-review-graph__*
 - 测试缺断言或使用无效断言（如 `assert True`）
 - **页面对象缺 `is_page_loaded()` 方法**
 - **新增页面未同步导出到 `framework/pages/__init__.py`**
-- **主流程测试中手动创建 browser/context 而未使用 `framework/conftest.py` 的 `page` fixture**
+- **主流程测试中手动创建 browser/context 而未使用 `tests/conftest.py` 的 `page` fixture**
 
 ### P1 — 建议修改
 - 命名不符规范：类 PascalCase、方法/变量 snake_case、常量 UPPER_SNAKE_CASE
@@ -51,7 +51,7 @@ tools: Read, Grep, Glob, Edit, mcp__code-review-graph__*
 ## 工作流程
 
 1. **边界确认**：收到范围后列出实际将审查的文件清单，超过 10 个要求主代理分批
-2. **按需读规则**：仅在本次会话首次运行时读取 `.claude/rules/` 对应规则（`framework/pages/*` 读 `.claude/rules/playwright/playwright-overview.md` 和 `.claude/rules/coding-conventions/coding-conventions.md`；`framework/tests/*` 读 `.claude/rules/coding-conventions/coding-conventions.md`，其中已涵盖测试规范）
+2. **按需读规则**：仅在本次会话首次运行时读取 `.claude/rules/` 对应规则（`framework/pages/*` 读 `.claude/rules/playwright/playwright-overview.md` 和 `.claude/rules/coding-conventions/coding-conventions.md`；`tests/*` 读 `.claude/rules/coding-conventions/coding-conventions.md`，其中已涵盖测试规范）
 3. **图谱分析（自动）**：利用 code-review-graph MCP 工具做结构化分析，与静态审查并行：
    - 调用 `detect_changes` 获取变更文件的**风险评分**（高/中/低），优先审查高风险文件
    - 调用 `get_impact_radius` 检查变更的**爆炸半径**——是否有未在审查范围内的受影响文件
@@ -69,7 +69,7 @@ tools: Read, Grep, Glob, Edit, mcp__code-review-graph__*
 
    注意：本项目是 POM 测试框架，**必须保留** `BasePage → 页面子类` 继承结构和定位符类常量声明，不得拉平。
    审查无上述信号则跳过此步骤。
-7. **验证**：修复完成后由主代理在项目根运行 `.venv/bin/pytest framework/tests/<role>/test_<page>.py --env=<用户确认的环境> -v`（本代理无 Bash 权限；`--env` 须由用户确认），主代理反馈结果后本代理判断是否需要二次修复
+7. **验证**：修复完成后由主代理在项目根运行 `.venv/bin/pytest tests/<role>/test_<page>.py --env=<用户确认的环境> -v`（本代理无 Bash 权限；`--env` 须由用户确认），主代理反馈结果后本代理判断是否需要二次修复
 8. **出报告**：按下方格式输出
 
 ## 回滚策略
@@ -111,7 +111,7 @@ tools: Read, Grep, Glob, Edit, mcp__code-review-graph__*
 ### 执行记录
 - 已修复 P0: X 个
 - 简化建议: X 处（仅建议，未修改）
-- 待主代理验证: `.venv/bin/pytest framework/tests/<role>/test_xxx.py --env=<用户确认的环境> -v`
+- 待主代理验证: `.venv/bin/pytest tests/<role>/test_xxx.py --env=<用户确认的环境> -v`
 
 ### 待主代理确认
 - P1/P2 列表是否应用

@@ -1,3 +1,24 @@
 # GEN004 业务术语黑名单 —— 每行一个词，# 开头为注释。
-# 默认为空。使用者按自己项目填入不应出现在 .claude/skills/ 正文中的专有业务术语，
+# 填入不应出现在 .claude/skills/ 与 .claude/rules/ 正文中的专有业务术语，
 # 例如产品代号、内部系统名、角色称谓。命中只给 WARN，不阻断。
+#
+# 匹配语义（见 checkers/genericity.py::_term_pattern）：
+#   · 不区分大小写：写一个 alva 即覆盖 Alva / ALVA_TOKEN / alva.ai
+#   · 词首前一个字符不能是英文字母，词尾不限：AlvaBaseTest、test_alva_xxx 命中，salvage 不命中
+#   · 表格行、标题 / 注释行、清单项、带 ❌ / BAD / 禁止 的行豁免（反例教学语境）
+#
+# 不要填通用 POM 词（HomePage / LoginPage / BasePage / is_page_loaded 等）：
+# 它们是各 skill 讲方法论时的通用示例名，填了会满屏误报。
+
+# 产品名：覆盖站点域名、环境变量、测试基类与用例文件名、界面文案里的品牌词
+alva
+
+# 本项目专有的组件类名
+SidebarNav
+
+# 业务用例的测试数据（股票代码）
+SPCX
+
+# 界面上独有的可及名称 / 文案
+Log in Log in
+Agent sections

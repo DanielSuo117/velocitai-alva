@@ -67,9 +67,6 @@ class LoginPage(BasePage):
 
     # 提交按钮的出现 / 消失 / 启停都是前端状态更新，毫秒级；等太久只会拖慢「状态不对」时的失败
     STATE_TIMEOUT = 5000
-    # 前端（React）已接管某个 DOM 节点的标志：水合时 React 往节点上挂 __reactProps$<随机串> 属性。
-    # 用途见 wait_for_interactive()。
-    REACT_HYDRATED_JS = "el => Object.keys(el).some(k => k.startsWith('__reactProps$'))"
 
     def open(self, base_url: str) -> None:
         """直接导航到登录页。base_url 不带末尾斜杠（conftest 的 base_url fixture 约定），这里仍做一次兜底。"""
@@ -78,7 +75,7 @@ class LoginPage(BasePage):
     # ── 导航 ────────────────────────────────────────────────────────
     def click_back_to_home(self):
         """点左上角「Alva」Logo 回首页。登录页没有侧边栏，这是往返闭合走的真实 UI 入口。"""
-        self.click(self.BACK_TO_HOME_LINK)
+        self.click_hydrated(self.BACK_TO_HOME_LINK)
 
     # ── 登录方式 ────────────────────────────────────────────────────
     def is_login_option_visible(self, name: str) -> bool:
@@ -94,7 +91,7 @@ class LoginPage(BasePage):
 
     def click_login_with_google(self):
         """跳 Google 第三方授权。只读冒烟禁止调用。"""
-        self.click(self.GOOGLE_LOGIN_BUTTON)
+        self.click_hydrated(self.GOOGLE_LOGIN_BUTTON)
 
     # 下面三个图标按钮用 _locate() 直接点、不经 click() 的自愈：自愈顶替后点到的会是
     # 另一家的第三方授权（理由见 ICON_LOGIN_BUTTONS）。按钮真没了就按原样超时失败。
@@ -119,14 +116,9 @@ class LoginPage(BasePage):
         （2026-09-22 本机无头实测）。这段约 1s 的空窗里 fill 只改了 DOM 的 value，React 状态
         仍是空串 ——「Submit email」按钮永远不出现，水合后也不会补上（连续 3 次复现）。
         已水合时本方法约 2ms 返回，可以放心在每次输入前调用。
-        timeout 缺省沿用 page 的默认超时。
+        timeout 缺省为 BasePage.HYDRATION_TIMEOUT（15s）。
         """
-        kwargs = {"timeout": timeout} if timeout is not None else {}
-        handle = self._locate(self.EMAIL_INPUT).element_handle(**kwargs)
-        try:
-            self.page.wait_for_function(self.REACT_HYDRATED_JS, arg=handle, **kwargs)
-        finally:
-            handle.dispose()
+        self.wait_for_hydrated(self.EMAIL_INPUT, timeout)
 
     def fill_email(self, email: str):
         """只输入，不提交（fill 不会触发回车）。只读冒烟只许填 example.com 之类的假地址。
@@ -147,7 +139,7 @@ class LoginPage(BasePage):
 
         只读冒烟禁止调用 —— 这是生产站点，提交即产生真实外发邮件。
         """
-        self.click(self.SUBMIT_EMAIL_BUTTON)
+        self.click_hydrated(self.SUBMIT_EMAIL_BUTTON)
 
     def is_submit_email_enabled(self, timeout: int | None = None) -> bool:
         """提交邮箱按钮是否出现且可用（等它变为可用）。邮箱格式合法时成立。"""
@@ -202,7 +194,7 @@ class LoginPage(BasePage):
 
         只用于「进入登录页之后」的肯定断言。不在登录页时，第一个 is_visible 要等满 page 默认
         超时（15s）才返回 False（2026-09-22 在首页实测 15.00s）。要确认已经离开登录页，
-        请断言目标页的 is_page_loaded()（如 test_guest_login._back_to_home 断言首页），
+        请断言目标页的 is_page_loaded()（如返回首页后断言 HomePage.is_page_loaded()），
         不要写 assert not login.is_page_loaded()。
         """
         return self.is_visible(self.PAGE_HEADING) and self.is_visible(self.EMAIL_INPUT)
