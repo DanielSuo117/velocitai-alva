@@ -20,7 +20,7 @@ class BaseTest:
         """每个用例前后各做一次记录。
 
         故意不在这里塞登录、建数据之类的业务前置 —— 那些属于角色基类
-        （见 skills/architecture 的角色分层），放进通用基类会让所有用例
+        （见 .claude/skills/architecture 的角色分层），放进通用基类会让所有用例
         背上它们并不需要的开销。
         """
         log.info("用例开始：%s", request.node.nodeid)

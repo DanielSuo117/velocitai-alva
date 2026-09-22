@@ -4,43 +4,39 @@ __pycache__/
 .venv/
 node_modules/
 reports/
-CLAUDE.local.md
 
-# 包含真实 token，禁止入库
-# 代码迁入 framework/ 后旧路径已失效，两条都保留以防历史工作区仍有旧位置文件
-config/settings.py
+# ── 本机独有、可能含凭据的配置，禁止入库 ──────────────────────────
+# 本机配置（可能填了 API key、指向私人账号的登录态），由 settings.example.py 复制
 framework/config/settings.py
 
-.playwright-mcp
+# 登录态（Playwright storageState）
+# 由 framework/tools/save_auth_state.py 人工登录后生成，里面是 alva 的会话
+# cookie（含 JWT），拿到它就等于登进了那个账号。不带前导斜杠：无论 settings
+# 把目录指到哪一层，只要叫 .auth 都挡住。
+.auth/
 
-.claude-plugin
+# Claude Code 的本地权限决定与私有备忘。不能只靠用户的全局 ignore 挡着 ——
+# 换一台机器或别人克隆本仓库时，它们会直接被提交进去。
+.claude/settings.local.json
+CLAUDE.local.md
 
-# Mermaid VS Code 扩展自动生成的 Copilot 指令，不入库
-# （applyTo: "**" 会载入每个 Copilot 会话，属未经审查的 agent 上下文）
-.github/copilot-instructions.md
-.github/instructions/
+# 任何形式的环境变量文件
+.env
+.env.*
+!.env.example
 
 # 自愈写回源码前留下的备份（--self-heal=auto），属本地产物
 *.heal-bak
 
-# ── 本机独有的配置，不该带给别人 ──────────────────────────────────
-# Claude Code 的本地权限决定。此前只靠用户的全局 ignore 挡着 ——
-# 换一台机器或别人克隆本仓库时，它会直接被提交进去。
-.claude/settings.local.json
-
 # JetBrains
 .idea/
-
-# ── 任何形式的环境变量文件，一律不入库 ────────────────────────────
-.env
-.env.*
-!.env.example
 
 # ── 工具生成、可随时重建的产物 ────────────────────────────────────
 # 这几个目录的工具会往自己里面丢一个 .gitignore 来自我屏蔽，但那是工具的
 # 实现细节，换版本就可能没有。在仓库这一层显式声明，不依赖它。
 .pytest_cache/
 .code-review-graph/
+.playwright-mcp/
 .superpowers/
 
 # Playwright 的 trace / 录像 / 报告默认落点（reports/ 之外的那些）

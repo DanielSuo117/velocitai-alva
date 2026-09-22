@@ -41,7 +41,18 @@
       "Bash([ -f *)",
       "Bash([ -d *)",
       "Skill(add-regression-point)",
-      "Skill(add-regression-point:*)"
+      "Skill(add-regression-point:*)",
+      "Bash(.venv/bin/pytest *)",
+      "Bash(.venv/bin/python -m py_compile *)",
+      "Bash(.venv/bin/python -m unittest *)",
+      "Bash(.venv/bin/pip list*)",
+      "Bash(.venv/bin/playwright install *)",
+      "Bash(python3 -m unittest discover -s .claude/hooks/gate/tests *)",
+      "Bash(python3 .claude/hooks/gate_cli.py --mode audit*)",
+      "Bash(agent-browser set viewport *)",
+      "Bash(agent-browser --session * open *)",
+      "Bash(agent-browser --session * set viewport *)",
+      "Bash(agent-browser --session * snapshot *)"
     ],
     "deny": [
       "Bash(rm -rf *)",
@@ -58,8 +69,24 @@
   "hooks": {
     "PreToolUse": [
       {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "G=\"$CLAUDE_PROJECT_DIR/.claude/hooks/gate_cli.py\"; [ -f \"$G\" ] || exit 0; python3 \"$G\" --mode write",
+            "timeout": 10
+          }
+        ]
+      },
+      {
         "matcher": "Bash",
         "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git commit *)",
+            "command": "G=\"$CLAUDE_PROJECT_DIR/.claude/hooks/gate_cli.py\"; [ -f \"$G\" ] || exit 0; python3 \"$G\" --mode commit",
+            "timeout": 20
+          },
           {
             "type": "command",
             "if": "Bash(git commit *)",

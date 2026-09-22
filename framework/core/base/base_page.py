@@ -1,6 +1,6 @@
 """所有页面对象的基类 —— 公共能力在此封装，业务页面继承即可。
 
-约定（见 rules/coding-conventions）：
+约定（见 .claude/rules/coding-conventions）：
 - 定位符写作类顶部常量，并带注释说明其语义，例如
       LOGIN_BUTTON = "#login-btn"   # P0: 登录按钮
   注释不是可有可无的装饰：它是选择器失效时自愈用来还原意图的依据。

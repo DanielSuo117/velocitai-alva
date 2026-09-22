@@ -1,15 +1,28 @@
+import os
+from contextlib import contextmanager
+
 import pytest
 from playwright.sync_api import sync_playwright
 
-from config.settings import (
-    DEFAULT_NAVIGATION_TIMEOUT,
-    DEFAULT_TIMEOUT,
-    ENVS,
-    HEADLESS,
-    SLOW_MO,
-    VIEWPORT_HEIGHT,
-    VIEWPORT_WIDTH,
-)
+try:
+    from config.settings import (
+        DEFAULT_NAVIGATION_TIMEOUT,
+        DEFAULT_TIMEOUT,
+        ENVS,
+        HEADLESS,
+        SLOW_MO,
+        VIEWPORT_HEIGHT,
+        VIEWPORT_WIDTH,
+    )
+except ModuleNotFoundError as exc:
+    # settings.py 被 .gitignore 忽略，新克隆的仓库里必然没有。原生报错只说
+    # 「No module named config.settings」，看不出该从哪份模板复制。
+    if exc.name != "config.settings":
+        raise
+    raise ImportError(
+        "缺少 framework/config/settings.py（不随仓库分发）。请先在项目根执行："
+        "cp framework/config/settings.example.py framework/config/settings.py"
+    ) from exc
 
 
 def pytest_addoption(parser):
@@ -17,7 +30,7 @@ def pytest_addoption(parser):
         "--env",
         action="store",
         required=True,
-        help="Target environment: pre | prod",
+        help=f"目标环境：{' | '.join(ENVS)}",
     )
     parser.addoption(
         "--self-heal",
@@ -43,12 +56,23 @@ def env(request):
 
 @pytest.fixture(scope="session")
 def base_url(env):
-    return env["base_url"]
+    # 统一去掉末尾斜杠：调用方一律写 f"{base_url}/path"，
+    # settings 里哪天多写了一个 / 也不会拼出 https://alva.ai//path。
+    return env["base_url"].rstrip("/")
 
 
 @pytest.fixture(scope="session")
-def token(env):
-    return env["token"]
+def auth_state_path(env, request):
+    """当前环境的登录态（storageState）文件路径。只给路径，不管文件在不在 ——
+    缺文件该 skip 还是该 fail，由使用它的 fixture 决定。"""
+    path = env.get("storage_state")
+    if not path:
+        pytest.fail(
+            f"环境 {request.config.getoption('--env')} 未配置 storage_state，"
+            f"请对照 framework/config/settings.example.py 补上",
+            pytrace=False,
+        )
+    return path
 
 
 @pytest.fixture(scope="session")
@@ -68,31 +92,65 @@ def browser(playwright_instance):
     browser.close()
 
 
-@pytest.fixture
-def page(browser):
+@contextmanager
+def _open_page(browser, storage_state=None):
+    """所有 page fixture 的唯一出口：viewport、超时、登录态都在这一处决定。
+
+    三个 fixture 各写一遍 new_context / set_default_timeout 时，改一处漏一处的后果
+    是不同角色跑在不同的视口或超时下 —— 同一个页面访客用例过、登录用例挂，
+    查半天却不是业务问题。分层沿用 .claude/skills/browser-config：viewport 在 context 层，
+    超时在 page 层。
+    """
     context = browser.new_context(
         viewport={"width": VIEWPORT_WIDTH, "height": VIEWPORT_HEIGHT},
+        storage_state=storage_state,
     )
-    new_page = context.new_page()
-    new_page.set_default_timeout(DEFAULT_TIMEOUT)
-    new_page.set_default_navigation_timeout(DEFAULT_NAVIGATION_TIMEOUT)
-    yield new_page
-    new_page.close()
-    context.close()
+    try:
+        page = context.new_page()
+        page.set_default_timeout(DEFAULT_TIMEOUT)
+        page.set_default_navigation_timeout(DEFAULT_NAVIGATION_TIMEOUT)
+        yield page
+    finally:
+        # 关 context 会连带关掉其下所有 page，包括用例中途打开、没来得及关的新 tab
+        context.close()
+
+
+@pytest.fixture
+def page(browser):
+    """访客态、每个用例独立的 page。自愈 e2e 用例（tests/e2e）依赖它打开本地夹具。"""
+    with _open_page(browser) as new_page:
+        yield new_page
 
 
 @pytest.fixture(scope="class")
 def class_page(browser, request):
-    context = browser.new_context(
-        viewport={"width": VIEWPORT_WIDTH, "height": VIEWPORT_HEIGHT},
-    )
-    new_page = context.new_page()
-    new_page.set_default_timeout(DEFAULT_TIMEOUT)
-    new_page.set_default_navigation_timeout(DEFAULT_NAVIGATION_TIMEOUT)
-    request.cls.page = new_page
-    yield new_page
-    new_page.close()
-    context.close()
+    """访客态、同一个 class 内共享的 page（条件见 .claude/rules/playwright/browser-context.md）。"""
+    with _open_page(browser) as new_page:
+        if request.cls is not None:       # 模块级函数也可能借用它，那里没有 cls 可挂
+            request.cls.page = new_page
+        yield new_page
+
+
+@pytest.fixture(scope="class")
+def user_class_page(auth_state_path, request):
+    """带登录态、同一个 class 内共享的 page。
+
+    登录态文件缺失时 skip 而不是 fail：它要人工登录才能生成、且不入库，新克隆的
+    仓库和 CI 上天然没有，整组 user 用例报红只会淹没真正的回归失败。
+    文件在、但登录态已过期是另一回事 —— 由 UserBaseTest 打开首页后校验并直接 fail。
+
+    browser 在确认文件存在之后才取：先要 browser 会在默认有头模式下白白弹出一个
+    浏览器窗口，然后立刻 skip。
+    """
+    if not os.path.isfile(auth_state_path):
+        pytest.skip(
+            f"登录态文件不存在：{auth_state_path}。请先在项目根执行 "
+            f"`.venv/bin/python framework/tools/save_auth_state.py "
+            f"--env {request.config.getoption('--env')}` 手动登录生成"
+        )
+    browser = request.getfixturevalue("browser")
+    with _open_page(browser, storage_state=auth_state_path) as new_page:
+        yield new_page
 
 
 def pytest_configure(config):
