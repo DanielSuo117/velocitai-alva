@@ -45,6 +45,8 @@
 | **代码审查** / 探索 / 重构 | [code-review-graph](./.claude/skills/code-review-graph/) |
 | 组合场景（多 skill 串联） | [ui-automation-harness](./.claude/skills/ui-automation-harness/) |
 | **落库校验** / 沉淀闸门 | [evolution-gate](./.claude/rules/agent-behavior/evolution-gate.md) |
+| 闸门**机制原理**（图解） | [docs/gate-mechanism.md](./docs/gate-mechanism.md) |
+| 自愈**机制原理**（图解） | [docs/self-healing-mechanism.md](./docs/self-healing-mechanism.md) |
 | **自愈边界**规则 | [self-healing-boundaries](./.claude/rules/playwright/self-healing-boundaries.md) |
 | **编码规范**（命名/基类/用例） | [coding-conventions](./.claude/rules/coding-conventions/coding-conventions.md) |
 | **Playwright 规则**索引 | [playwright-overview](./.claude/rules/playwright/playwright-overview.md) |

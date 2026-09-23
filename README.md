@@ -117,15 +117,22 @@ allure serve reports/allure-results
 
 ## 落库闸门（hook）
 
-`.claude/settings.json` 的 PreToolUse hooks 在两个时机调用 `.claude/hooks/gate_cli.py`：
+`.claude/settings.json` 在三个时机调用 `.claude/hooks/gate_cli.py`：
 
-- Claude Code 执行 Write / Edit 时（`--mode write`），校验写入 `.claude/skills/` `.claude/rules/` `docs/` 的内容；
-- 执行 `git commit` 时（`--mode commit`），校验暂存区，包括 CLAUDE.md 路由表是否登记了全部 skill、链接是否存在。
+- PreToolUse，Claude Code 执行 Write / Edit 时（`--mode write`），校验写入 `.claude/skills/` `.claude/rules/` `docs/` 的内容；
+- PreToolUse，执行 `git commit` 时（`--mode commit`），校验暂存区，包括 CLAUDE.md 路由表是否登记了全部 skill、链接是否存在；
+- Stop，每轮对话结束时（`--mode stop`），全仓兜底扫描，抓住用 Bash 直接写盘、绕过 Write/Edit 的改动。
 
-闸门以退出码 2 表示拦截，拦截理由会回传给代理。命令写成「脚本不存在就 `exit 0`」：`.claude/hooks/`
-被删或没拷全时直接放行，而不是让 Python 找不到文件、以退出码 2 结束，把所有 Write/Edit 都拦下。
+前两者以退出码 2 表示拦截，理由回传给代理；Stop 那一路**只提示、永远返回 0**——那里的退出码 2 在宿主协议里
+意思是「阻止本轮停止」，与 deny 完全不同，用错会把会话卡进停不下来的循环。
+
+命令写成「脚本不存在就 `exit 0`」：`.claude/hooks/` 被删或没拷全时直接放行，而不是让 Python 找不到文件、
+以退出码 2 结束，把所有 Write/Edit 都拦下。
 
 手动全量检查：`python3 .claude/hooks/gate_cli.py --mode audit`（退出码 0 即无拦截项）。
+现状报告（证据成色 + 上下文占用）：`python3 .claude/hooks/gate_cli.py --mode report`。
+
+机制原理图解 → [docs/gate-mechanism.md](docs/gate-mechanism.md)
 
 ## 当前覆盖范围
 

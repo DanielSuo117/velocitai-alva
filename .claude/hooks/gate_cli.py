@@ -4,7 +4,7 @@
 用法：
     gate_cli.py --mode write     # PreToolUse(Write|Edit)，从 stdin 读 hook JSON
     gate_cli.py --mode commit    # PreToolUse(Bash git commit)，校验暂存区
-    gate_cli.py --mode audit     # 全仓库扫描，供测试、Stop hook 与 commit 模式内部使用
+    gate_cli.py --mode audit     # 全仓库扫描，供测试与 stop 模式复用（commit 模式不调用它）
     gate_cli.py --mode stop      # Stop hook：全仓兜底扫描，只提示、永不阻塞
     gate_cli.py --mode report    # 只读报告：证据覆盖率 + 上下文占用，永不拦截
     gate_cli.py --mode baseline  # 重新冻结存量条款快照（会放宽约束，需显式确认）
@@ -49,7 +49,7 @@ def _emit(violations) -> int:
     # 悄悄吞掉。
     #   · stderr 一份：退出码 2（BLOCK）时宿主把 stderr 回传给 agent。
     #   · stdout 的 systemMessage 一份：退出码 0 时宿主只从 **stdout** 组装要展示
-    #     的 hook 消息，只写 stderr 等于没写。STR005/GEN004/EVI003/EVI004 这四个
+    #     的 hook 消息，只写 stderr 等于没写。STR005/GEN004/EVI003/EVI004/PRV005/PRV006 这六个
     #     纯 WARN 码全部走退出码 0，不补这一份就是完全不可见（spec §13 遗留问题）。
     #     systemMessage 是宿主文档中「对所有 hook 展示给用户」的通用字段。
     warns = [v for v in violations if v.severity == Severity.WARN]
