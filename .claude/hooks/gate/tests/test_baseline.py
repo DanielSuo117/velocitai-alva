@@ -72,9 +72,9 @@ class TestAuditCoverage(unittest.TestCase):
         seen = []
         real = runner._content_checks
 
-        def spy(rel, text, root, is_new=False):
+        def spy(rel, text, root, is_new=False, audit=False):
             seen.append(str(rel))
-            return real(rel, text, root, is_new=is_new)
+            return real(rel, text, root, is_new=is_new, audit=audit)
 
         with mock.patch.object(runner, "_content_checks", spy):
             runner.run_audit(REPO)

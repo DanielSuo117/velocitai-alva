@@ -92,7 +92,7 @@ token 来源依次为环境变量 `ALVA_TOKEN`、`.auth/prod_user.json`。CI 上
 # Alva agent 对话：Channels → Alva → 发送提示词 → 等回复（真实发送一条消息，回复实测约 30～42s）
 .venv/bin/pytest tests/test_alva_agent_chat.py --env=prod
 
-# 全量（pytest.ini 的 testpaths=tests，连同 tests/unit、tests/e2e 一起收集）
+# 全量业务回归（pytest.ini 的 testpaths 是 tests/test_*.py，只收业务用例）
 .venv/bin/pytest --env=prod
 # 全量但跳过标记为 slow 的对话用例，不发消息
 .venv/bin/pytest --env=prod -m "not slow"
@@ -105,9 +105,37 @@ HEADLESS=true .venv/bin/pytest tests/test_login.py --env=prod
 ```
 
 两条业务用例都需要 token：拿不到（`ALVA_TOKEN` 与 `.auth/prod_user.json` 都没有）时 skip，原因里给出获取方式；
-token 无效或过期时直接 fail，提示重新获取。`tests/e2e` 不加 `--self-heal=on|strict|auto` 时整组 skip。
+token 无效或过期时直接 fail，提示重新获取。
+
+`tests/unit`（107 条）与 `tests/e2e`（14 条）是**框架自身**的自测（自愈引擎、组件作用域），不是站点的回归点，
+因此不进默认收集 —— 否则一次「全量回归」跑出 123 条，真正该看的 2 条被淹没。两种方式都能把它们单独跑出来：
+显式传目录，或用 `tests/conftest.py` 统一挂上的 `framework` 标记筛选。`tests/e2e` 不加
+`--self-heal=on|strict|auto` 时整组 skip。
+
+```bash
+.venv/bin/pytest tests/e2e --env=prod --self-heal=on     # 只跑自愈端到端（本地 HTML 夹具，不访问站点）
+.venv/bin/pytest tests --env=prod -m framework           # 框架自测全跑（unit + e2e）
+.venv/bin/pytest tests --env=prod -m "not framework"     # 显式传 tests/ 但只要业务用例
+```
 
 ### 选择器自愈
+
+LLM 推理后端的三项配置都在 `framework/config/settings.py`（该文件已被 `.gitignore` 忽略，不入库；
+新克隆的仓库里没有它，先 `cp framework/config/settings.example.py framework/config/settings.py`）：
+
+| 配置项 | 作用 | 留空时 |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | 推理用的 key | 自愈退回纯规则模式，不报错 |
+| `ANTHROPIC_BASE_URL` | API 根地址，指向官方或自建代理／中转 | 用官方地址 |
+| `SELF_HEAL_MODEL` | 推理用的模型 ID | 用 `llm.py::DEFAULT_MODEL` |
+
+三项都可用同名环境变量临时覆盖（环境变量优先，便于 CI 注入与临时换号）。
+`ANTHROPIC_BASE_URL` 三种填法都认：根地址、到 `/v1`、到 `/v1/messages`。
+key 等同凭据：不打印、不入库、不外传，`settings.py` 建议权限 600。
+
+模型若会「思考」，思考 token 同样计入 `llm.py::MAX_TOKENS`。上限给小了，响应会在产出
+JSON 之前就被截断（`stop_reason=max_tokens`、只有 thinking 块），表现为模型永远交白卷；
+这种情况会打 WARNING 点名，照着调大 `MAX_TOKENS` 或换不思考的模型即可。
 
 `--self-heal` 默认 `off`。`on`：定位失效时尝试重建定位符，用例继续；`strict`：同 `on`，但只要发生过自愈就
 以非零码结束，便于发现漂移；`auto`：同 `on`，并在规则修不了时让模型推理，且把修复写回页面对象源码

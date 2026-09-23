@@ -69,6 +69,8 @@
 
 执行：先过[落库闸门](./.claude/rules/agent-behavior/evolution-gate.md)（检索去重 → 带触发条件与失败现象 → 新建文件先提案）；再 Edit 最小增量写入；回复末尾声明 `📝 已沉淀至 <file>：<摘要>`。新建 skill 必须同步在上方路由表登记，否则提交时被闸门拦下。
 
+**规则条款须给出可核验的证据**：`**失败现象**` 写这次实际观察到的表现，`**验证**` 给出闸门能核对的引用（用例 nodeid / 代码位置 / commit 短哈希）。闸门会解析源码与 git 历史逐一核对，引用不存在即拦截 —— 写不出引用说明这条规则还没被验证过，先验证再落库（P0.11）。
+
 `.claude/skills/` 与 `.claude/rules/` 只写与项目无关的方法论，alva.ai 的 URL、文案、类名一律进 `docs/`。
 
 ---
@@ -81,7 +83,7 @@
 # 用例在 tests/test_*.py，测试类继承 tests/base_test.py::AlvaBaseTest（凭 token 免登，需先有 token）
 .venv/bin/pytest tests/test_login.py --env=prod              # 访问登录页 → 免登进入首页（只读）
 .venv/bin/pytest tests/test_alva_agent_chat.py --env=prod    # Alva agent 对话：真实发送一条消息，跑前须用户同意
-.venv/bin/pytest --env=prod -m "not slow"                    # 全量（含 tests/unit、tests/e2e），跳过发消息的对话用例
+.venv/bin/pytest --env=prod -m "not slow"                    # 全量业务回归，跳过发消息的对话用例
 .venv/bin/pytest tests/test_login.py --env=prod -v -k <关键字>
 HEADLESS=true .venv/bin/pytest tests/test_login.py --env=prod   # 无头（默认有头）
 
@@ -91,10 +93,14 @@ HEADLESS=true .venv/bin/pytest tests/test_login.py --env=prod   # 无头（默�
 # 报告（pytest.ini 默认写入 reports/allure-results，只保留最近一次运行）
 allure serve reports/allure-results
 
-# 框架与闸门自测（不访问站点）
-PYTHONPATH=framework .venv/bin/python -m unittest discover -s tests/unit -t .
+# 框架与闸门自测（不属于业务回归，pytest.ini 的 testpaths 已把它们排除在默认收集之外）
+PYTHONPATH=framework .venv/bin/python -m unittest discover -s tests/unit -t .   # 自愈引擎等，107 条，不开浏览器
+.venv/bin/pytest tests/e2e --env=prod --self-heal=on                            # 自愈端到端，14 条，只开本地夹具不访问站点
 python3 -m unittest discover -s .claude/hooks/gate/tests -t .claude/hooks
-python3 .claude/hooks/gate_cli.py --mode audit
+python3 .claude/hooks/gate_cli.py --mode audit          # 全仓校验，rc=2 即有 BLOCK
+
+# 落库现状：证据成色（多少条款有失败现象 / 可核验验证）+ 上下文占用 + 待复核项
+python3 .claude/hooks/gate_cli.py --mode report
 ```
 
 私有备忘：[CLAUDE.local.md](./CLAUDE.local.md)（不入库）。
@@ -106,4 +112,4 @@ python3 .claude/hooks/gate_cli.py --mode audit
 - **code-review-graph MCP**：探索代码库时优先使用图谱工具，再降级到 Grep/Glob/Read。工作流方法论 → [code-review-graph skill](./.claude/skills/code-review-graph/)
 - **code-reviewer 子代理**：代码审查与缺陷验证 → [code-reviewer.md](./.claude/agents/code-reviewer.md)
 - **agent-browser**：DOM 探索 / 定位符采集。每次 `open` 后紧跟 `set viewport 1024 768`；并行时用 `--session <名字>` 隔离
-- **落库闸门**：[.claude/settings.json](./.claude/settings.json) 的 PreToolUse hooks 在 Write/Edit 与 `git commit` 时调用 `.claude/hooks/gate_cli.py`，拦截不合规的 `.claude/skills/` `.claude/rules/` `docs/` 写入与提交
+- **落库闸门**：[.claude/settings.json](./.claude/settings.json) 的 PreToolUse hooks 在 Write/Edit 与 `git commit` 时调用 `.claude/hooks/gate_cli.py`，拦截不合规的 `.claude/skills/` `.claude/rules/` `docs/` 写入与提交；Stop hook 每轮结束再跑一次全仓扫描，兜住 Bash 直接写文件这类绕过 PreToolUse 的改动（只提示、不阻塞）

@@ -140,5 +140,39 @@ paths:
 
 ---
 
+## P0.10 · 推理的 token 上限必须容纳「思考」，截断不得静默
+
+**触发**：给自愈的 LLM 后端设 `max_tokens`，或换用一个会思考（reasoning）的模型时。
+
+**失败现象**：会思考的模型把思考 token 也计入 `max_tokens`。上限给小了，整个预算会被
+思考耗尽，响应里只有 thinking 块、一个 text 块都没有，`stop_reason=max_tokens`。
+解析器拿不到 JSON 就返回空候选 —— 而这与「模型认为没有合适元素、正确地交白卷」
+在调用方看来完全一样。实测某会思考的模型在一个难例上思考就花掉约 4500 token，
+上限 1024/2048/4096 时 **100% 落进这种情况**，且没有任何报错线索。
+
+推理层对故障静默是对的（它不该影响测试结论），但不能静默到查不出该调哪个参数。
+
+❌ 反例：
+
+```python
+body = {"model": model, "max_tokens": 1024, "messages": [...]}
+...
+return parse_response(payload)      # 截断和「交白卷」都返回 []，无从区分
+```
+
+✅ 正例：上限按难例实测值留足余量，并在截断时点名：
+
+```python
+MAX_TOKENS = 8192      # 实测难例思考约 4500 token；目标明确时仅约 500，不产生额外开销
+
+candidates = parse_response(payload)
+if not candidates and payload.get("stop_reason") == "max_tokens":
+    log.warning("响应被 max_tokens 截断（已用 %s，上限 %s）：思考 token 也计入该上限",
+                (payload.get("usage") or {}).get("output_tokens"), MAX_TOKENS)
+return candidates
+```
+
+---
+
 相关：[selector-self-heal skill](../../skills/selector-self-heal/) ·
 [locator-strategy](./locator-strategy.md) · [落库闸门](../agent-behavior/evolution-gate.md)

@@ -6,17 +6,18 @@ import pathlib
 import subprocess
 
 from . import context
-from .checkers import evidence, genericity, registry, structure
+from .checkers import evidence, genericity, provenance, registry, structure
 
 # 需要做内容校验的三类文件；CLAUDE.md（ENTRY）只在 commit/audit 时走注册闭环
 _CONTENT_KINDS = (context.SKILL, context.RULE, context.DOC)
 
 
-def _content_checks(rel, text, root, is_new=False):
+def _content_checks(rel, text, root, is_new=False, audit=False):
     out = []
     out.extend(structure.check(rel, text, root))
     out.extend(genericity.check(rel, text, root))
     out.extend(evidence.check(rel, text, root, is_new=is_new))
+    out.extend(provenance.check(rel, text, root, audit=audit))
     return out
 
 
@@ -136,8 +137,9 @@ def run_audit(root):
             if context.classify(rel) not in _CONTENT_KINDS:
                 continue
             try:
-                out.extend(_content_checks(rel, p.read_text(encoding="utf-8"), root))
+                out.extend(_content_checks(rel, p.read_text(encoding="utf-8"), root, audit=True))
             except Exception:
                 continue
     out.extend(registry.check_repo(root))
+    out.extend(provenance.check_orphans(root))
     return out

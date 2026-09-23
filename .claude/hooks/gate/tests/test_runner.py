@@ -47,11 +47,28 @@ class TestRunWrite(unittest.TestCase):
         self.assertEqual(codes(runner.run_write(p)), ["STR002"])
 
     def test_new_rule_with_paths_frontmatter_only_asks(self):
-        # 带 `paths:` frontmatter 的新规则：只应得到 EVI001 提案确认，不得误报结构问题
+        # 带 `paths:` frontmatter 的新规则：证据齐全时只应得到 EVI001 提案确认，
+        # 不得误报结构问题。证据引用指向临时仓库里真实存在的用例。
+        (self.root / "tests").mkdir(exist_ok=True)
+        (self.root / "tests" / "test_x.py").write_text(
+            "class TestX:\n    def test_y(self):\n        pass\n", encoding="utf-8")
+        p = self._payload("Write", ".claude/rules/new-rule.md",
+                          content='---\npaths:\n  - "framework/**"\n---\n\n'
+                                  "## 🔴 P0.1 · 规则\n\n"
+                                  "**触发**：处理 framework 下的页面对象时\n"
+                                  "**失败现象**：定位符命中两个元素，断言随机挂在其中一个上，连续 3 次复现\n"
+                                  "**验证**：tests/test_x.py::TestX::test_y\n\n"
+                                  "❌ 反例\n✅ 正例\n")
+        self.assertEqual(codes(runner.run_write(p)), ["EVI001"])
+
+    def test_new_rule_without_evidence_is_blocked(self):
+        # 同一条规则，证据缺失时必须被证据门槛拦下 —— 与上一个用例成对
         p = self._payload("Write", ".claude/rules/new-rule.md",
                           content='---\npaths:\n  - "framework/**"\n---\n\n'
                                   "## 🔴 P0.1 · 规则\n\n**触发**：x\n\n❌ 反例\n✅ 正例\n")
-        self.assertEqual(codes(runner.run_write(p)), ["EVI001"])
+        got = codes(runner.run_write(p))
+        self.assertIn("PRV001", got)
+        self.assertIn("PRV002", got)
 
     def test_new_skill_triggers_ask(self):
         p = self._payload("Write", ".claude/skills/demo/SKILL.md",

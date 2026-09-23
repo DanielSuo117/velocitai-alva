@@ -81,7 +81,7 @@ class _Isolated(unittest.TestCase):
 
     def setUp(self):
         self.enterContext(mock.patch.dict(os.environ))
-        for name in ("ANTHROPIC_API_KEY", "SELF_HEAL_MODEL"):
+        for name in ("ANTHROPIC_API_KEY", "SELF_HEAL_MODEL", "ANTHROPIC_BASE_URL"):
             os.environ.pop(name, None)
         self.use_settings()
 
@@ -200,6 +200,84 @@ class TestNoKeyFailsSoft(_Isolated):
         self.urlopen.assert_not_called()
         self.assertEqual(page.located, [], "没有任何候选却去页面上验证了选择器")
         self.assertEqual(len(heal_runtime.HEALED), before)
+
+
+class TestBaseUrl(_Isolated):
+    """API 根地址与 key / 模型共用同一套优先级。"""
+
+    def test_configured_value_used(self):
+        self.use_settings(ANTHROPIC_BASE_URL=" https://proxy.example/anthropic ")
+        self.assertEqual(llm.base_url(), "https://proxy.example/anthropic")
+
+    def test_empty_falls_back_to_official(self):
+        for blank in ("", "   ", None):
+            with self.subTest(blank=blank):
+                self.use_settings(ANTHROPIC_BASE_URL=blank)
+                self.assertEqual(llm.base_url(), llm.DEFAULT_BASE_URL)
+
+    def test_old_settings_without_the_item_falls_back(self):
+        self.use_settings(ANTHROPIC_API_KEY="")     # 旧配置文件没有 ANTHROPIC_BASE_URL
+        self.assertEqual(llm.base_url(), llm.DEFAULT_BASE_URL)
+
+    def test_missing_settings_file_falls_back(self):
+        self.enterContext(mock.patch.dict(sys.modules, {"config.settings": None}))
+        self.assertEqual(llm.base_url(), llm.DEFAULT_BASE_URL)
+
+    def test_env_overrides_settings(self):
+        self.use_settings(ANTHROPIC_BASE_URL="https://from-settings.example")
+        os.environ["ANTHROPIC_BASE_URL"] = "https://from-env.example"
+        self.assertEqual(llm.base_url(), "https://from-env.example")
+
+    def test_settings_key_never_leaks_through_a_stubbed_module(self):
+        # 顶替掉 config.settings 后必须读不到本机真实配置里的 key
+        self.use_settings()
+        self.assertEqual(llm.api_key(), "")
+
+
+class TestApiUrl(_Isolated):
+    """代理/中转给出的地址三种写法都得能用 —— 填法不符就是 404，而 404 被静默吞掉。"""
+
+    def test_three_accepted_forms_resolve_to_the_same_endpoint(self):
+        want = "https://h.example/anthropic/v1/messages"
+        for given in ("https://h.example/anthropic",
+                      "https://h.example/anthropic/",
+                      "https://h.example/anthropic/v1",
+                      "https://h.example/anthropic/v1/messages"):
+            with self.subTest(given=given):
+                self.use_settings(ANTHROPIC_BASE_URL=given)
+                self.assertEqual(llm.api_url(), want)
+
+    def test_default_is_official_messages_endpoint(self):
+        self.assertEqual(llm.api_url(),
+                         llm.DEFAULT_BASE_URL + llm.MESSAGES_PATH)
+
+
+class TestTruncationIsNotSilent(_Isolated):
+    """被 max_tokens 截断是配置问题，每次都会复发，不能和「模型交白卷」混为一谈。"""
+
+    def test_truncated_response_warns(self):
+        payload = {"stop_reason": "max_tokens", "content": [{"type": "thinking"}],
+                   "usage": {"output_tokens": 1024}}
+        with self.assertLogs("velocitai.healing", level="WARNING") as cm:
+            llm._warn_if_truncated(payload)
+        self.assertIn("max_tokens", cm.output[0])
+
+    def test_model_declining_does_not_warn(self):
+        payload = {"stop_reason": "end_turn",
+                   "content": [{"type": "text", "text": '{"candidates":[]}'}]}
+        with mock.patch.object(llm.log, "warning") as w:
+            llm._warn_if_truncated(payload)
+        w.assert_not_called()
+
+    def test_infer_sends_the_configured_budget(self):
+        os.environ["ANTHROPIC_API_KEY"] = "dummy-key-for-tests"
+        reply = {"content": [{"type": "text", "text": '{"candidates":[{"selector":"#a"}]}'}]}
+        urlopen = self.enterContext(mock.patch.object(
+            llm.urllib.request, "urlopen",
+            side_effect=lambda req, timeout=None: io.BytesIO(json.dumps(reply).encode("utf-8"))))
+        llm.infer(INTENT, ELS)
+        sent = json.loads(urlopen.call_args.args[0].data.decode("utf-8"))
+        self.assertEqual(sent["max_tokens"], llm.MAX_TOKENS)
 
 
 if __name__ == "__main__":

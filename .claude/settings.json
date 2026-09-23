@@ -96,6 +96,18 @@
         ]
       }
     ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "G=\"$CLAUDE_PROJECT_DIR/.claude/hooks/gate_cli.py\"; [ -f \"$G\" ] || exit 0; cd \"$CLAUDE_PROJECT_DIR\" && python3 \"$G\" --mode stop",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "matcher": "",

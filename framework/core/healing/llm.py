@@ -12,45 +12,84 @@
 """
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import urllib.error
 import urllib.request
 
-API_URL = "https://api.anthropic.com/v1/messages"
+from core.logger import get_logger
+
+# API 根地址。未配置时用官方地址，见 base_url()。抽成配置项是为了能指向自建代理或
+# 中转服务 —— 那类地址因人而异、常带私有 token，和 key 一样属于本机配置，
+# 不能写死在入库的源码里。
+log = get_logger("velocitai.healing")
+
+DEFAULT_BASE_URL = "https://api.anthropic.com"
+MESSAGES_PATH = "/v1/messages"
 DEFAULT_MODEL = "claude-sonnet-5"   # 未配置 SELF_HEAL_MODEL 时使用，见 model_name()
 MAX_ELEMENTS = 60       # 喂给模型的元素上限，超出部分按出现顺序截断
+# 单次响应的 token 上限。**会思考的模型把思考 token 也算进这里** —— 2026-09-22 实测
+# deepseek-flash 在一个两按钮难分的场景上思考就花掉 4521 token，上限 1024/2048/4096
+# 时全部 stop_reason=max_tokens、只产出 thinking 块、一个 text 块都没有，候选恒为空。
+# 目标本身明确时仅需约 511 token，所以这个上限只在难例上被用到，平时不产生额外开销。
+MAX_TOKENS = 8192
 TIMEOUT = 30
 
 
-def api_key() -> str:
-    """按 环境变量 → config.settings 的顺序取 key。取不到返回空串。"""
-    k = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-    if k:
-        return k
-    try:
-        from config.settings import ANTHROPIC_API_KEY  # type: ignore
+def _configured(env_var: str, settings_attr: str, default: str = "") -> str:
+    """按 环境变量 → config.settings → 默认值 的顺序取一项配置。
 
-        return (ANTHROPIC_API_KEY or "").strip()
+    key、模型、API 根地址共用同一套优先级。各写一遍就是三个出口，改优先级时
+    必然漏掉一个 —— 收口在这里。环境变量排前面是为了临时换号与 CI 注入不必动
+    本地文件；settings.py 不入库，新克隆的仓库里根本没有，因此读不到、文件里
+    缺这一项、值为空三种情况一律当成没配，退到默认值：缺配置只该让自愈退回
+    纯规则模式，不该报错。
+
+    用 import_module 而不是 `from config.settings import X`：前者只认
+    sys.modules 里的那一份，单测顶替掉 config.settings 时拿到的才是假模块，
+    不会从真实的本机配置里漏出 key。
+    """
+    v = os.environ.get(env_var, "").strip()
+    if v:
+        return v
+    try:
+        mod = importlib.import_module("config.settings")
+        v = (getattr(mod, settings_attr, "") or "").strip()
     except Exception:
-        return ""
+        v = ""
+    return v or default
+
+
+def api_key() -> str:
+    """自愈推理用的 API key。取不到返回空串（自愈退回纯规则模式）。"""
+    return _configured("ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")
 
 
 def model_name() -> str:
-    """按 环境变量 → config.settings 的顺序取模型名，与 api_key() 同一套优先级。
+    """自愈推理用的模型 ID。都没配时退回 DEFAULT_MODEL。"""
+    return _configured("SELF_HEAL_MODEL", "SELF_HEAL_MODEL", DEFAULT_MODEL)
 
-    都没配（含旧配置文件里没有这一项）时退回 DEFAULT_MODEL —— 缺配置不该让
-    自愈报错，只是用默认模型。
+
+def base_url() -> str:
+    """API 根地址。都没配时退回官方地址 DEFAULT_BASE_URL。"""
+    return _configured("ANTHROPIC_BASE_URL", "ANTHROPIC_BASE_URL", DEFAULT_BASE_URL)
+
+
+def api_url() -> str:
+    """Messages API 的完整地址。
+
+    三种填法都认：只填根地址（https://host）、填到 /v1、或直接填完整的
+    /v1/messages —— 代理与中转服务给出的地址这三种都有。不容忍的话，填法
+    不符就是 404，而 infer() 把网络错误一律静默吞掉，最终只表现为「模型
+    永远交白卷」，没有任何线索指向是地址填错了。
     """
-    m = os.environ.get("SELF_HEAL_MODEL", "").strip()
-    if m:
-        return m
-    try:
-        from config.settings import SELF_HEAL_MODEL  # type: ignore
-
-        return (SELF_HEAL_MODEL or "").strip() or DEFAULT_MODEL
-    except Exception:
-        return DEFAULT_MODEL
+    u = base_url().rstrip("/")
+    if u.endswith(MESSAGES_PATH):
+        return u
+    if u.endswith("/v1"):
+        return u + "/messages"
+    return u + MESSAGES_PATH
 
 
 def available() -> bool:
@@ -115,10 +154,10 @@ def infer(intent, elements: list, tried: list | None = None,
         return []
     body = json.dumps({
         "model": model or model_name(),
-        "max_tokens": 1024,
+        "max_tokens": MAX_TOKENS,
         "messages": [{"role": "user", "content": build_prompt(intent, elements, tried or [])}],
     }).encode("utf-8")
-    req = urllib.request.Request(API_URL, data=body, method="POST", headers={
+    req = urllib.request.Request(api_url(), data=body, method="POST", headers={
         "content-type": "application/json",
         "x-api-key": key,
         "anthropic-version": "2023-06-01",
@@ -128,7 +167,27 @@ def infer(intent, elements: list, tried: list | None = None,
             payload = json.loads(r.read().decode("utf-8"))
     except Exception:
         return []       # 网络/鉴权/超时一律静默退回规则模式
-    return parse_response(payload)
+    candidates = parse_response(payload)
+    if not candidates:
+        _warn_if_truncated(payload)
+    return candidates
+
+
+def _warn_if_truncated(payload: dict) -> None:
+    """响应被 max_tokens 截断时出声。
+
+    这是配置问题而不是偶发故障 —— 会思考的模型能把整个预算花在 thinking 块上，
+    一个 text 块都不产出，于是每一次都失败。infer() 对失败一律静默是对的
+    （推理层故障不该影响测试结论），但静默到查不出该调哪个参数就过头了：
+    表现只剩「模型永远交白卷」，和「模型认为没有合适元素」完全分不开。
+    """
+    if payload.get("stop_reason") != "max_tokens":
+        return
+    used = (payload.get("usage") or {}).get("output_tokens")
+    log.warning(
+        "模型响应被 max_tokens 截断（已用 %s，上限 %s），未能拿到候选。"
+        "会思考的模型其思考 token 也计入该上限 —— 调大 core/healing/llm.py::MAX_TOKENS，"
+        "或改用不思考的模型。", used, MAX_TOKENS)
 
 
 def parse_response(payload: dict) -> list:

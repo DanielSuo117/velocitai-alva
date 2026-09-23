@@ -75,6 +75,56 @@ class SomeFeaturePage(BasePage):
 - 按角色拆分目录：`tests/<roleA>/`、`tests/<roleB>/`
 - 基类路径：各角色 `tests/<role>/<role>_base_test.py::<Role>BaseTest`；公共根基类 `tests/base_test.py::BaseTest`
 
+### 框架自测必须与业务回归分开收集，且隔离点收口在一处
+
+**触发**：仓库里既有框架自身的自测（引擎逻辑、基类行为、拦截器等，不访问被测站点），
+又有业务 UI 回归用例，而两者都放在 `tests/` 下时。
+
+**失败现象**：`testpaths` 直接写 `tests`，一次「全量回归」把两类用例一起收集。框架自测
+数量通常远多于业务用例（数十倍很常见），回归结果被它们淹没，真正该看的那几条要翻屏找；
+CI 上框架自测挂了也会被当成「站点回归失败」误报一轮。
+
+隔离方式只能有一个出口。`testpaths` 通配 + 用例文件内 `pytestmark` 两套并行时，新增目录的人
+必然漏掉一处（同[自愈边界 P0.8](../playwright/self-healing-boundaries.md)「定位作用域必须收口在一处」的教训）。
+标记统一由 `tests/conftest.py` 按路径注入：`conftest.py` 只有 pytest 会读，
+用 `unittest` 直接跑的纯 stdlib 自测完全无感，不必为了被标记而 `import pytest`。
+
+❌ 反例：
+
+```ini
+# pytest.ini
+testpaths = tests          # 框架自测与业务回归一起收
+```
+
+```python
+# tests/e2e/test_xxx.py —— 另一套机制，与 testpaths 各管一半
+pytestmark = pytest.mark.framework
+```
+
+✅ 正例：
+
+```ini
+# pytest.ini
+testpaths = tests/test_*.py    # 默认只收业务用例；显式传目录仍照跑
+markers =
+    framework: 框架自身的自测，不属于业务回归；默认不收集，需显式传目录
+```
+
+```python
+# tests/conftest.py —— 唯一出口
+_FRAMEWORK_TEST_DIRS = ("unit", "e2e")
+
+def pytest_collection_modifyitems(items):
+    base = os.path.dirname(os.path.abspath(__file__))
+    roots = tuple(os.path.join(base, d) + os.sep for d in _FRAMEWORK_TEST_DIRS)
+    for item in items:
+        path = str(getattr(item, "path", "") or item.fspath)
+        if path.startswith(roots):          # 必须按路径过滤：本 hook 拿到的是整个
+            item.add_marker(pytest.mark.framework)   # session 的 items，不只本目录
+```
+
+---
+
 ### 测试方法新增与修改顺序
 
 - **新增**：追加到类末尾，禁止插入到已有方法之间

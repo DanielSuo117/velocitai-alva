@@ -308,6 +308,30 @@ def auth_class_page(auth_token, request):
         yield new_page
 
 
+# 框架自测所在的目录。它们验证的是自愈机制本身，不是 alva.ai 的回归点。
+_FRAMEWORK_TEST_DIRS = ("unit", "e2e")
+
+
+def pytest_collection_modifyitems(items):
+    """给 tests/unit、tests/e2e 下的用例统一挂 framework 标记。
+
+    为什么不写在用例文件里：tests/unit 是纯 unittest，刻意不 import pytest ——
+    它的运行方式之一是 `python3 -m unittest discover -s tests/unit -t .`，用的是
+    系统 python3，装没装 pytest 都得能跑。而 tests/e2e 虽然能写文件内标记，两处
+    各写一份就又是两个出口，加目录的人迟早漏掉一个（同 P0.8 的教训）。
+    conftest.py 只有 pytest 会读，unittest 完全无感，正好是那个唯一出口。
+
+    注意本 hook 拿到的是**整个 session** 的 items，不只是本目录下的 ——
+    必须按路径过滤，否则业务用例也会被标记成框架自测、跟着被 deselect。
+    """
+    base = os.path.dirname(os.path.abspath(__file__))
+    roots = tuple(os.path.join(base, d) + os.sep for d in _FRAMEWORK_TEST_DIRS)
+    for item in items:
+        path = str(getattr(item, "path", "") or item.fspath)
+        if path.startswith(roots):
+            item.add_marker(pytest.mark.framework)
+
+
 def pytest_configure(config):
     """按需开启自愈。默认关闭 —— 它会改变「失败」的含义，不能悄悄生效。"""
     if config.getoption("--self-heal") == "off":

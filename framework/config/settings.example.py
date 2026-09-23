@@ -90,3 +90,9 @@ ANTHROPIC_API_KEY = ""
 # 自愈推理用的模型 ID。留空则用 core/healing/llm.py::DEFAULT_MODEL；环境变量
 # SELF_HEAL_MODEL 优先于这里（见 llm.py::model_name）。同样写成字面量，理由同上。
 SELF_HEAL_MODEL = ""
+# 自愈推理请求打到哪个地址。留空则用 core/healing/llm.py::DEFAULT_BASE_URL（Anthropic
+# 官方地址）；环境变量 ANTHROPIC_BASE_URL 优先于这里（见 llm.py::base_url）。
+# 指向自建代理或中转服务时填它们给的地址 —— 这类地址因人而异、常常本身就带私有
+# token，和 key 一样属于本机配置，所以只放在这份不入库的文件里。
+# 三种填法都认：根地址（https://host）、到 /v1、到 /v1/messages。同样写成字面量。
+ANTHROPIC_BASE_URL = ""
