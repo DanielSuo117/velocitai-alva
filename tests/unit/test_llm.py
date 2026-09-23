@@ -280,5 +280,50 @@ class TestTruncationIsNotSilent(_Isolated):
         self.assertEqual(sent["max_tokens"], llm.MAX_TOKENS)
 
 
+class TestPickAttrs(unittest.TestCase):
+    """属性挑选 —— 旧版固定白名单丢掉自定义 data-*，是模型交白卷的直接原因。"""
+
+    def test_all_data_attrs_survive_not_just_the_known_ones(self):
+        got = llm._pick_attrs({"data-name": "main-login", "data-track": "cta", "class": "x"})
+        self.assertEqual(got, {"data-name": "main-login", "data-track": "cta"})
+
+    def test_known_anchors_come_first(self):
+        # 位次决定被 MAX_ATTRS 截断时谁先出局；testid 类最稳定，必须最先保住
+        attrs = {f"data-x{i}": str(i) for i in range(12)}
+        attrs["data-testid"] = "keep-me"
+        got = llm._pick_attrs(attrs)
+        self.assertEqual(next(iter(got)), "data-testid")
+        self.assertEqual(len(got), llm.MAX_ATTRS)
+
+    def test_long_values_are_truncated(self):
+        got = llm._pick_attrs({"data-blob": "x" * 500})
+        self.assertEqual(len(got["data-blob"]), llm.MAX_ATTR_LEN)
+
+    def test_class_is_not_taken_here(self):
+        # class 另有 item["class"] 承载（且只取前 4 个），在这里重复会挤掉真锚点
+        self.assertEqual(llm._pick_attrs({"class": "a b c"}), {})
+
+    def test_empty_values_skipped(self):
+        self.assertEqual(llm._pick_attrs({"id": "", "data-x": None}), {})
+
+
+class TestCompactCarriesScope(unittest.TestCase):
+    """scope 是「两个元素其余字段全同」时唯一的区分线索，不能在压缩这步丢掉。"""
+
+    def test_scope_is_forwarded(self):
+        got = llm._compact([{"tag": "button", "attrs": {}, "scope": "main"}])
+        self.assertEqual(got[0]["scope"], "main")
+
+    def test_absent_scope_adds_no_key(self):
+        got = llm._compact([{"tag": "button", "attrs": {}, "scope": None}])
+        self.assertNotIn("scope", got[0])
+
+    def test_prompt_explains_scope(self):
+        # 采回来却不告诉模型它是什么，等于没采
+        prompt = llm.build_prompt(INTENT, [{"tag": "button", "attrs": {}, "scope": "main"}], [])
+        self.assertIn("scope", prompt)
+        self.assertIn("最内层容器", prompt)
+
+
 if __name__ == "__main__":
     unittest.main()

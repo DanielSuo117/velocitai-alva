@@ -59,9 +59,39 @@ _ROLE_JS = """
   };
 """
 
+# 元素所在的「最内层容器」。自愈的快照原本是一份扁平清单，DOM 的父子关系一点都
+# 没带回来 —— 于是两个 tag / role / 可及名称全都相同、只是分处导航栏与主区的按钮，
+# 在模型眼里是两条逐字节相同的记录，只能交白卷（2026-09-22 实测 v4 夹具）。
+#
+# 只取最内层的那一个，不取整条祖先链：再往上很快就到 #app / body 这种对页面上
+# 所有元素都一样的容器，带上它等于没有信息，白白占 token。
+#
+# 取值优先级与定位符策略一致：稳定锚点 > id > 语义标签。返回的字符串本身就是一个
+# 可用的选择器前缀，模型拿到就能直接拼。
+_SCOPE_JS = """
+  const LANDMARKS = ['main','nav','header','footer','aside','form','dialog'];
+  const ANCHOR_ATTRS = ['data-testid','data-test','data-qa','data-cy'];
+  const scopeOf = (e, stopAt) => {
+    for (let p = e.parentElement; p && p !== document.documentElement; p = p.parentElement) {
+      // 止步于快照根节点：组件场景下越过它往上找，会给出组件外部的容器，
+      // 模型据此拼出的选择器再被 scoped() 加上组件前缀就永远不命中 ——
+      // 闸会拦下（安全），但这一轮推理白花了。
+      if (stopAt && p === stopAt) return null;
+      for (const a of ANCHOR_ATTRS) {
+        const v = p.getAttribute(a);
+        if (v) return '[' + a + '="' + v + '"]';
+      }
+      if (p.id) return '#' + p.id;
+      const t = p.tagName.toLowerCase();
+      if (LANDMARKS.indexOf(t) !== -1) return t;
+    }
+    return null;
+  };
+"""
+
 # 只采集可能承载交互或语义的元素，避免把整棵 DOM 拖回 Python 侧。
 SNAPSHOT_JS = """
-(root) => {""" + _ROLE_JS + """
+(root) => {""" + _ROLE_JS + _SCOPE_JS + """
   const SEL = 'a,button,input,select,textarea,label,[role],[data-testid],[data-test],[data-qa],[data-cy],h1,h2,h3,li,td,th,span[id]';
   // root 非空时只采它内部的元素：组件的自愈不得越出自己的根节点去别处找，
   // 越界修复正是「顶替到无关元素」的典型路径。
@@ -80,6 +110,7 @@ SNAPSHOT_JS = """
       name: accName(e),
       text: (e.innerText || e.value || '').trim().slice(0, 120),
       classes: Array.from(e.classList || []),
+      scope: scopeOf(e, root ? base : null),
     });
     if (out.length >= 400) break;                    // 上限，防止超大页面拖垮
   }

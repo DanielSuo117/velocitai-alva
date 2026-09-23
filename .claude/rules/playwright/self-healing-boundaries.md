@@ -174,5 +174,46 @@ return candidates
 
 ---
 
+## P0.11 · 桩掉外部依赖的用例，证明不了被测对象真有那个能力
+
+**触发**：为「调用外部服务并依据其返回做判断」的逻辑写用例时，把那次调用桩掉。
+
+**失败现象**：桩注入的返回值是人写的，于是用例只验证了「拿到这个返回之后处理得对不对」，
+而「外部服务实际上会不会给出这个返回」从未被验证。实测本项目：LLM 自愈的端到端用例
+桩掉模型响应后一路通过，但真实模型在同一场景下**只会交白卷** —— 因为喂过去的元素快照
+被压缩步骤丢掉了区分性字段，两个候选元素的记录逐字节相同。桩版绿灯，缺陷藏了整版。
+
+桩本身没错（用例要能离线跑、不花钱、结论确定），错在只有桩版。两类断言必须分开守：
+桩版守「拿到候选之后闸是否照常把关」，实网版守「模型是否真的给得出这个候选」。
+实网版默认 skip，靠显式环境变量开启，这样默认套件仍然离线、免费、确定。
+
+**验证**：`tests/e2e/test_llm_healing_live.py::test_model_discriminates_by_scope_and_data_attrs`
+—— 该用例在修复前必然失败（真实模型交白卷），修复后通过；配套的
+`test_model_still_declines_when_truly_indistinguishable` 守住反向边界。
+
+❌ 反例：只有桩版，且桩里塞的是人推理出来的理想答案
+
+```python
+fake_api(['main >> role=button[name="登录"]'])   # 模型当时根本推不出这个
+po.click(AmbiguousLoginPage.MAIN_LOGIN_BTN)
+assert len(drift()) == 1                          # 绿灯，但什么都没证明
+```
+
+✅ 正例：桩版守闸，另加一条默认 skip 的实网用例守能力
+
+```python
+pytestmark = pytest.mark.skipif(
+    not (os.environ.get("SELF_HEAL_LIVE") == "1" and llm.available()),
+    reason="实网用例：需显式开启且已配置 key")
+
+def test_model_discriminates(page):
+    healed = runtime.attempt(page, MAIN_LOGIN, use_llm=True)
+    assert healed, "模型没能给出候选 —— 检查快照是否又把区分性信息丢了"
+    page.locator(runtime.scoped(healed)).click()
+    assert page.evaluate("() => window.CLICKED") == ["main-login"]
+```
+
+---
+
 相关：[selector-self-heal skill](../../skills/selector-self-heal/) ·
 [locator-strategy](./locator-strategy.md) · [落库闸门](../agent-behavior/evolution-gate.md)

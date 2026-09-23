@@ -114,6 +114,7 @@ token 无效或过期时直接 fail，提示重新获取。
 
 ```bash
 .venv/bin/pytest tests/e2e --env=prod --self-heal=on     # 只跑自愈端到端（本地 HTML 夹具，不访问站点）
+SELF_HEAL_LIVE=1 .venv/bin/pytest tests/e2e/test_llm_healing_live.py --env=prod   # 打真实模型（会花钱，默认 skip）
 .venv/bin/pytest tests --env=prod -m framework           # 框架自测全跑（unit + e2e）
 .venv/bin/pytest tests --env=prod -m "not framework"     # 显式传 tests/ 但只要业务用例
 ```

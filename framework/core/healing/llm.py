@@ -96,21 +96,59 @@ def available() -> bool:
     return bool(api_key())
 
 
+# 固定保留的属性。data-* 一律保留，不在这里列举 —— 见 _pick_attrs。
+_KEEP_ATTRS = ("id", "name", "type", "placeholder", "href", "alt", "value")
+# 已知的测试锚点属性，排在其他 data-* 前面：它们最稳定，也最可能是答案本身。
+_ANCHOR_ATTRS = ("data-testid", "data-test", "data-qa", "data-cy")
+MAX_ATTRS = 8           # 每个元素最多带几个属性，防止埋点类 data-* 挤掉别的元素
+MAX_ATTR_LEN = 40       # 单个属性值截断长度
+
+
+def _pick_attrs(attrs: dict) -> dict:
+    """挑出对定位有用的属性。
+
+    旧版是一份固定白名单（id/data-testid/data-test/data-qa/name/type/placeholder），
+    有两个毛病：一是和 runtime.SNAPSHOT_JS 的采集范围对不上 —— 那边把 [data-cy]
+    采回来了，这边不保留，等于白采；二是真实站点的自定义 data-* 千奇百怪
+    （data-name、data-track、data-id），固定名单一个都接不住。
+
+    2026-09-22 实测 tests/e2e/fixtures/v4_after.html：两个按钮仅靠 data-name 区分，
+    被白名单丢掉后模型收到两条逐字节相同的记录，只能交白卷。
+
+    改为「已知锚点 → 其余 data-* → 固定几项」。加上限是因为一个元素可能挂十几个
+    data-*（埋点、状态、i18n），全塞进去会把别的元素挤出 MAX_ELEMENTS。
+    """
+    picked: dict = {}
+
+    def take(k, v):
+        if v and k not in picked and len(picked) < MAX_ATTRS:
+            picked[k] = str(v)[:MAX_ATTR_LEN]
+
+    for k in _ANCHOR_ATTRS:
+        take(k, attrs.get(k))
+    for k, v in attrs.items():
+        if k.startswith("data-"):
+            take(k, v)
+    for k in _KEEP_ATTRS:
+        take(k, attrs.get(k))
+    return picked
+
+
 def _compact(elements: list) -> list:
     """把快照压成模型够用的最小形态，省 token 也少干扰。"""
     out = []
     for e in elements[:MAX_ELEMENTS]:
-        attrs = e.get("attrs") or {}
         item = {"tag": e.get("tag")}
-        for k in ("id", "data-testid", "data-test", "data-qa", "name", "type", "placeholder"):
-            if attrs.get(k):
-                item[k] = attrs[k]
+        item.update(_pick_attrs(e.get("attrs") or {}))
         if e.get("role"):
             item["role"] = e["role"]
         if e.get("name"):
             item["aria"] = e["name"]
         if e.get("text"):
             item["text"] = e["text"][:60]
+        # 所在容器。两个元素其余字段全都相同时，这常常是唯一能把它们分开的线索。
+        if e.get("scope"):
+            item["scope"] = e["scope"]
         cls = [c for c in (e.get("classes") or [])][:4]
         if cls:
             item["class"] = cls
@@ -130,15 +168,19 @@ def build_prompt(intent, elements: list, tried: list) -> str:
         f"标签={intent.tag or '未知'} role={intent.role or '未知'} 可及名称={intent.name or '未知'}\n\n"
         f"【规则已尝试且不可用的候选】{json.dumps(tried, ensure_ascii=False) if tried else '（无）'}\n\n"
         f"【当前页面元素】\n{json.dumps(_compact(elements), ensure_ascii=False, indent=1)}\n\n"
+        "说明：元素记录里的 scope 是该元素所在的最内层容器（如 main、nav、#sidebar、"
+        "[data-testid=\"panel\"]），它本身就是一个可用的选择器前缀。\n\n"
         "要求：\n"
         "1. 只返回 JSON，形如 {\"candidates\": [{\"selector\": \"...\", \"why\": \"...\"}]}，最多 3 个，按把握从高到低。\n"
         "2. 选择器必须是 Playwright 支持的语法（CSS、或 role=xxx[name=\"yyy\"]、或 text=）。\n"
         "3. 优先用 data-testid / id 等稳定锚点；不要使用构建工具生成的哈希类名"
         "（如 css-1a2b3c、sc-bdVaJa），它们下次构建就会变。\n"
-        "4. 必须唯一命中一个元素。\n"
+        "4. 必须唯一命中一个元素。若干元素其余字段完全相同、只有 scope 不同时，"
+        "用 scope 作前缀把范围收窄，例如 `main button[...]` 或 "
+        "`main >> role=button[name=\"...\"]`。\n"
         "5. **如果没有任何元素符合原本的意图，返回 {\"candidates\": []}。**"
         "宁可交白卷，也不要勉强给一个看起来像的 —— 顶替错元素会让用例假通过，"
-        "那比失败更糟。\n"
+        "那比失败更糟。连 scope 也分不开几个元素时，同样交白卷。\n"
     )
 
 

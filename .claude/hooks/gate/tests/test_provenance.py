@@ -174,6 +174,77 @@ class TestClauseDetection(_Base):
                 self.assertEqual(provenance.check(rel, clause(symptom=None), self.root), [])
 
 
+class TestFenceAwareness(_Base):
+    """正文与「正文里演示 Markdown」长得一样，不区分两者会两头出错。"""
+
+    def test_evidence_inside_example_fence_does_not_count(self):
+        # 最关键的一条：✅ 示例块里的字段若被当成真证据，本维度的意义就被架空了
+        text = ("## P9.1 · 条款\n\n**触发**：某种真实情况下会发生\n\n✅ 正例：\n\n"
+                "```markdown\n**失败现象**：写在示例围栏里的假证据\n"
+                "**验证**：tests/test_demo.py::TestDemo::test_ok\n```\n")
+        got = self.codes(text)
+        self.assertIn("PRV001", got)
+        self.assertIn("PRV002", got)
+
+    def test_heading_inside_fence_is_not_a_clause(self):
+        # 文档里演示条款写法时，围栏内的 ## 不得被切成幽灵条款而凭空要求补证据
+        text = ("# 文件\n\n正文\n\n```markdown\n## P9.9 · 围栏里的示例条款\n\n"
+                "❌ a\n✅ b\n```\n")
+        self.assertEqual(self.check(text), [])
+
+    def test_real_evidence_outside_fence_still_counts(self):
+        # 围栏感知不得误伤：真字段在围栏外、示例代码在围栏内，是最常见的正常写法
+        text = ("## P9.1 · 条款\n\n**触发**：某种真实情况下会发生\n"
+                f"**失败现象**：{GOOD_SYMPTOM}\n"
+                "**验证**：tests/test_demo.py::TestDemo::test_ok\n\n"
+                "❌ 反例：\n\n```python\nfoo()\n```\n\n✅ 正例：\n\n```python\nbar()\n```\n")
+        self.assertEqual(self.check(text), [])
+
+    def test_examples_inside_fence_still_mark_a_clause(self):
+        # ❌/✅ 判据仍看原文：把正反例写进围栏的小节依然是规则条款
+        text = "## 没有 P 级编号的规则\n\n```python\n# ❌ 错的\n# ✅ 对的\n```\n"
+        self.assertIn("PRV001", self.codes(text))
+
+
+class TestNodeidOwnership(_Base):
+    """引用要指得到真东西：名字存在还不够，归属也得对得上。"""
+
+    def setUp(self):
+        super().setUp()
+        (self.root / "tests" / "t.py").write_text(
+            "class Base:\n    def helper(self):\n        pass\n\n"
+            "class TestAlpha(Base):\n    def test_a(self):\n        pass\n\n"
+            "class TestBeta:\n    def test_b(self):\n        pass\n\n"
+            "def test_module_level():\n    pass\n", encoding="utf-8")
+
+    def test_correct_pairing_passes(self):
+        self.assertIsNone(provenance._check_nodeid(self.root, "tests/t.py", "TestAlpha", "test_a"))
+
+    def test_method_from_another_class_is_rejected(self):
+        # 扁平名字比对会放过这种张冠李戴：两个名字都在文件里，但并不属于同一个类
+        self.assertIsNotNone(
+            provenance._check_nodeid(self.root, "tests/t.py", "TestBeta", "test_a"))
+
+    def test_inherited_from_local_base_passes(self):
+        self.assertIsNone(provenance._check_nodeid(self.root, "tests/t.py", "TestAlpha", "helper"))
+
+    def test_unknown_class_is_rejected(self):
+        self.assertIsNotNone(
+            provenance._check_nodeid(self.root, "tests/t.py", "TestGhost", "test_a"))
+
+    def test_module_level_function_passes(self):
+        self.assertIsNone(
+            provenance._check_nodeid(self.root, "tests/t.py", "test_module_level", None))
+
+    def test_cross_file_base_fails_open(self):
+        """基类定义在别的文件里 → 继承来的方法看不见 → 问不出答案，放行不误拦。"""
+        (self.root / "tests" / "u.py").write_text(
+            "from tests.base import AlvaBaseTest\n\n"
+            "class TestX(AlvaBaseTest):\n    def test_own(self):\n        pass\n", encoding="utf-8")
+        self.assertIsNone(
+            provenance._check_nodeid(self.root, "tests/u.py", "TestX", "inherited_elsewhere"))
+
+
 class TestStaleEvidence(_Base):
     def test_broken_reference_in_baselined_clause_warns_on_audit(self):
         """存量豁免的是「补证据」，不豁免「证据后来烂掉了」。"""

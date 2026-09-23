@@ -1,0 +1,12 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>同容器双登录</title></head>
+<body>
+  <!-- 补了结构上下文之后**仍然**分不开的局面：两个按钮同在 main 之下，
+       tag / role / 可及名称 / scope 全都相同，class 又都是构建哈希（规则和模型
+       都不许拿它当锚点）。此时正确答案是交白卷，而不是二选一猜一个 ——
+       猜中一半的概率换来的是另一半的假通过，比直接失败更糟。 -->
+  <main>
+    <button class="css-3c2b1a">登录</button>
+    <button class="css-4d3c2b">登录</button>
+  </main>
+  <script src="_log.js"></script>
+</body></html>

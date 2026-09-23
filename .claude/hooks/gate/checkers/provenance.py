@@ -34,6 +34,7 @@ from ..violation import Severity, Violation
 # 由 STR003 强制正反例，所以有正反例就是在讲一条规则。纯表格 / 说明小节
 # （如「违规码速查」「边界速查表」）两者都不满足，不纳入，避免误报。
 _H2_RE = re.compile(r"^##\s+(.*)$")
+_FENCE_RE = re.compile(r"^\s*(```|~~~)")
 _PLEVEL_RE = re.compile(r"\bP\d+(?:\.\d+)*")
 
 _SYMPTOM = "**失败现象**"
@@ -86,17 +87,44 @@ def _load_baseline() -> set:
 
 # ————————————————————————— 条款切分 —————————————————————————
 
+def _mask_fenced(lines):
+    """把代码围栏内的行换成空行，保住行号。
+
+    Markdown 正文与「正文里演示 Markdown」长得一模一样，不区分两者会两头出错：
+      · 演示用的 `## 标题` 被切成幽灵条款，凭空要求它补证据（误拦）
+      · ✅ 示例块里的 `**失败现象**：…` 被当成本条款的真证据（漏判 —— 正是本维度
+        存在的理由被架空）
+    掩码而不是删除，是为了让报出的行号仍对应原文件。
+    """
+    out, fence = [], None
+    for line in lines:
+        if fence is None:
+            m = _FENCE_RE.match(line)
+            if m:
+                fence, _ = m.group(1), out.append("")
+                continue
+            out.append(line)
+        else:
+            out.append("")
+            if line.strip().startswith(fence):
+                fence = None
+    return out
+
+
 def _clauses(lines):
     """切出 (标题, 起始行号 1-based, 正文行列表)，只保留规则条款。"""
-    heads = [(i, m.group(1).strip()) for i, l in enumerate(lines) if (m := _H2_RE.match(l))]
+    masked = _mask_fenced(lines)
+    # 标题只在围栏外认；正反例判据仍看原文（写在围栏里的 ❌/✅ 同样是正反例）
+    heads = [(i, m.group(1).strip()) for i, l in enumerate(masked) if (m := _H2_RE.match(l))]
     out = []
     for pos, (i, title) in enumerate(heads):
         end = heads[pos + 1][0] if pos + 1 < len(heads) else len(lines)
-        body = lines[i:end]
+        raw_body = lines[i:end]
+        body = masked[i:end]        # 字段提取一律用掩码版，杜绝从示例块里偷证据
         # 表格行里的 ❌ / ✅ 不算正反例：「违规码速查」这类表格的单元格里天然出现
         # 这两个符号（在描述别的检查项），据此把说明表判成规则条款是误报。
         is_clause = bool(_PLEVEL_RE.search(title)) or any(
-            ("❌" in l or "✅" in l) and not l.lstrip().startswith("|") for l in body
+            ("❌" in l or "✅" in l) and not l.lstrip().startswith("|") for l in raw_body
         )
         if is_clause:
             out.append((title, i + 1, body))
@@ -152,16 +180,38 @@ def _iter_refs(text: str):
 
 
 @functools.lru_cache(maxsize=256)
-def _defined_names(path_str):
-    """源码里定义过的所有 class / def 名。解析不了时返回 None（fail-open，不猜）。"""
+def _symbol_table(path_str):
+    """(模块级名字, {类名: (自身方法集, 基类名列表)})。解析不了返回 None（不猜）。
+
+    扁平地收集全文件的名字是不够的：那样 `x.py::TestB::test_a` 在 test_a 其实属于
+    TestAlpha 时照样通过 —— 引用「看起来对得上」却指不到真东西，与可核验证据的
+    初衷相悖。这里按类记录归属，核验时才能判出张冠李戴。
+    """
     try:
         tree = ast.parse(pathlib.Path(path_str).read_text(encoding="utf-8"))
     except Exception:
         return None
-    return frozenset(
-        n.name for n in ast.walk(tree)
-        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-    )
+
+    def own_methods(node):
+        names = set()
+        for child in node.body:
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                names.add(child.name)
+            elif isinstance(child, ast.ClassDef):
+                names |= own_methods(child)      # 嵌套类里的方法也算这个类的
+        return names
+
+    toplevel, classes = set(), {}
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            toplevel.add(node.name)
+        elif isinstance(node, ast.ClassDef):
+            toplevel.add(node.name)
+            bases = [b.id if isinstance(b, ast.Name) else
+                     (b.attr if isinstance(b, ast.Attribute) else "?")
+                     for b in node.bases]
+            classes[node.name] = (own_methods(node), bases)
+    return toplevel, classes
 
 
 @functools.lru_cache(maxsize=256)
@@ -181,16 +231,37 @@ def _check_nodeid(root, path, cls, func):
     f = root / path
     if not f.exists():
         return f"文件不存在：{path}"
-    names = _defined_names(str(f))
-    if names is None:
+    table = _symbol_table(str(f))
+    if table is None:
         return None          # 解析不了就不猜（fail-open）
-    if func is None:
-        cls, func = None, cls        # 两段式 nodeid：文件::函数
-    if cls and cls not in names:
-        return f"{path} 里没有 {cls}"
-    if func not in names:
-        return f"{path} 里没有 {func}"
-    return None
+    toplevel, classes = table
+
+    if func is None:                      # 两段式 nodeid：文件::名字
+        return None if cls in toplevel else f"{path} 的模块层没有 {cls}"
+
+    if cls not in classes:
+        return f"{path} 里没有类 {cls}"
+
+    own, bases = classes[cls]
+    if func in own:
+        return None
+
+    # 顺着本文件内可见的基类继续找
+    seen, queue = {cls}, list(bases)
+    while queue:
+        b = queue.pop()
+        if b in seen or b not in classes:
+            continue
+        seen.add(b)
+        b_own, b_bases = classes[b]
+        if func in b_own:
+            return None
+        queue.extend(b_bases)
+
+    # 还有基类定义在别的文件里 —— 继承来的方法看不见，属于「问不出答案」，放行
+    if any(b not in classes for b in bases):
+        return None
+    return f"{path} 的 {cls} 里没有 {func}"
 
 
 def _check_fileline(root, path, line):
