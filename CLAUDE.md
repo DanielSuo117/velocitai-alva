@@ -96,8 +96,8 @@ HEADLESS=true .venv/bin/pytest tests/test_login.py --env=prod   # 无头（默�
 allure serve reports/allure-results
 
 # 框架与闸门自测（不属于业务回归，pytest.ini 的 testpaths 已把它们排除在默认收集之外）
-PYTHONPATH=framework .venv/bin/python -m unittest discover -s tests/unit -t .   # 自愈引擎等，107 条，不开浏览器
-.venv/bin/pytest tests/e2e --env=prod --self-heal=on                            # 自愈端到端，14 条，只开本地夹具不访问站点
+PYTHONPATH=framework .venv/bin/python -m unittest discover -s tests/unit -t .   # 自愈引擎等，不开浏览器
+.venv/bin/pytest tests/e2e --env=prod --self-heal=on --alluredir=reports/allure-e2e   # 自愈端到端，只开本地夹具不访问站点；单独的结果目录，免得清掉业务回归的报告
 python3 -m unittest discover -s .claude/hooks/gate/tests -t .claude/hooks
 python3 .claude/hooks/gate_cli.py --mode audit          # 全仓校验，rc=2 即有 BLOCK
 

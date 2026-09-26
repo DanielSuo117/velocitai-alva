@@ -25,7 +25,7 @@ paths:
 
 ❌ 在 conftest 或基类里把 `self_heal_enabled` 默认设为 True，让所有人无感知地跑在自愈模式下
 
-✅ `pytest tests/ --env=pre --self-heal=strict`，开关写在命令里，谁开的、开了什么一目了然
+✅ `pytest tests/ --env=<env> --self-heal=strict`，开关写在命令里，谁开的、开了什么一目了然
 
 ---
 

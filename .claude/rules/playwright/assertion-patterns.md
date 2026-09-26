@@ -102,6 +102,10 @@ SECTION_HEADER = "css=.section-wrapper-header >> text=<模板级名称>"  # scop
 **规则**：使用 `BaseTest.assert_page_and_api()` 一步完成。该方法先收集接口错误写入报告，再断言页面加载。
 页面加载失败时，接口错误信息会追加到失败消息中。
 
+> **现状**：框架目前还没有这两个方法 —— `framework/core/base/` 下既没有 `BaseTest.assert_page_and_api()`，
+> 也没有 `BasePage.get_api_errors()`。用例第一次需要同时校验页面与接口状态时，先按下方约定签名把它们实现进框架
+> （收集逻辑遵守 [performance-api-isolation.md](./performance-api-isolation.md)），再在用例里调用；实现之前直接调用只会得到 `AttributeError`。
+
 ❌ 反例：
 
 ```python
@@ -126,14 +130,14 @@ with allure.step("验证页面加载及接口状态"):
     )
 ```
 
-**`assert_page_and_api` 签名**（定义在 `tests/base_test.py::BaseTest`）：
+**`assert_page_and_api` 约定签名**（实现时放在 `framework/core/base/base_test.py::BaseTest`）：
 
 ```python
 @staticmethod
 def assert_page_and_api(page_obj, is_loaded_method: str, page_name: str, load_fail_msg: str):
 ```
 
-- `page_obj`：PageObject 实例（必须继承 `BasePage`，`get_api_errors()` 已提升到 `BasePage`）
+- `page_obj`：PageObject 实例（必须继承 `BasePage`；`get_api_errors()` 约定实现在 `BasePage`）
 - `is_loaded_method`：字符串形式的方法名，如 `"is_target_page_loaded"`
 - `page_name`：中文页面名，用于接口错误报告标题
 - `load_fail_msg`：页面加载失败时的断言消息
@@ -152,6 +156,6 @@ SPA 应用中 `is_visible(容器)` 可能对空白页面返回 true（容器 div
 
 ## Performance API 跨用例隔离
 
-`get_api_errors()` 基于 `performance.getEntriesByType('resource')` 收集接口错误。在 class 级共享 context 中，不清空缓冲区会导致前面用例的错误污染后续用例（单独跑通过、批量跑失败）。
+按约定，`get_api_errors()` 基于 `performance.getEntriesByType('resource')` 收集接口错误（框架尚未实现，见上文「现状」）。在 class 级共享 context 中，不清空缓冲区会导致前面用例的错误污染后续用例（单独跑通过、批量跑失败）。
 
 规则：收集后必须 `performance.clearResourceTimings()` → [performance-api-isolation.md](./performance-api-isolation.md)

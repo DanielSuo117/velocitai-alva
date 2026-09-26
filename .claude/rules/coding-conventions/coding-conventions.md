@@ -73,7 +73,7 @@ class SomeFeaturePage(BasePage):
 
 - 文件首行加 `# 文件用途：<中文概述>`；每文件对应一个 `Test<Role><Feature>` 类
 - 按角色拆分目录：`tests/<roleA>/`、`tests/<roleB>/`
-- 基类路径：各角色 `tests/<role>/<role>_base_test.py::<Role>BaseTest`；公共根基类 `tests/base_test.py::BaseTest`
+- 基类路径：各角色 `tests/<role>/<role>_base_test.py::<Role>BaseTest`；不区分角色时只有一个项目基类，放 `tests/base_test.py`。公共根基类是框架提供的 `framework/core/base/base_test.py::BaseTest`
 
 ### 框架自测必须与业务回归分开收集，且隔离点收口在一处
 
