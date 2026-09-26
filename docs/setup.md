@@ -139,10 +139,11 @@ JSON 之前就被截断（`stop_reason=max_tokens`、只有 thinking 块），�
 这种情况会打 WARNING 点名，照着调大 `MAX_TOKENS` 或换不思考的模型即可。
 
 `--self-heal` 默认 `off`。`on`：定位失效时尝试重建定位符，用例继续；`strict`：同 `on`，但只要发生过自愈就
-以非零码结束，便于发现漂移；`auto`：同 `on`，并在规则修不了时让模型推理，且把修复写回页面对象源码
-（会改动工作区，原文件备份为 `.heal-bak`）。写回同样要过落库闸门。
+以非零码结束，便于发现漂移；`auto`：同 `on`，并在规则修不了时让模型推理（没有 key 时等同 `on`）。
+**任何档位都不在运行期改写页面对象源码**：修复只写进 `reports/self-heal/proposals.jsonl`，写回源码经
+[selector-self-heal](../.claude/skills/selector-self-heal/) skill 人工复核后另行执行，并同样过落库闸门。
 
-模型推理需要 `ANTHROPIC_API_KEY`。**没有 key 时 `auto` 不报错、不发网络请求，只用规则修复，但照样写回源码**。
+模型推理需要 `ANTHROPIC_API_KEY`。**没有 key 时 `auto` 不报错、不发网络请求，只用规则修复**。
 模型名依次取环境变量 `SELF_HEAL_MODEL`、`settings.py` 的 `SELF_HEAL_MODEL`，都为空时用 `framework/core/healing/llm.py` 的 `DEFAULT_MODEL`。
 
 ### 报告

@@ -48,7 +48,7 @@ class LoginPage(BasePage):
     # 纯图标登录按钮：判可见与点击都**不走自愈**。它们没有可及名称，自愈记下的指纹只剩
     # {tag: button, role: button}，登录页上每个登录按钮都符合、又各有唯一 testid ——
     # 其中一个下线时，自愈会拿另一个登录按钮顶替（2026-09-22 实测：本地删掉 Discord 按钮后
-    # 被换成 login-popup-google，「Discord 可见」照样成立；--self-heal=auto 还会把它写回源码）。
+    # 被换成 login-popup-google，「Discord 可见」照样成立）。
     ICON_LOGIN_BUTTONS = (X_LOGIN_BUTTON, TELEGRAM_LOGIN_BUTTON, DISCORD_LOGIN_BUTTON)
 
     # 登录方式可见名称 → 定位符，供用例按名字数据驱动校验「登录方式齐全」

@@ -162,8 +162,8 @@ def pytest_addoption(parser):
         help=(
             "选择器自愈：off=关闭（默认）；on=失效时尝试重建定位符，用例继续；"
             "strict=同 on，但只要发生过自愈就让会话以非零码结束，便于 CI 发现漂移；"
-            "auto=同 on，并让模型在规则交白卷时推理（需要 ANTHROPIC_API_KEY，没有 key 只用规则），"
-            "且无论有没有 key 都把修复写回 PageObject 源码（会改动工作区文件）"
+            "auto=同 on，并让模型在规则交白卷时推理（需要 ANTHROPIC_API_KEY，没有 key 时等同 on）。"
+            "任何档位都只在运行期临时修复，不改写 PageObject 源码；写回由 selector-self-heal skill 复核"
         ),
     )
 
@@ -340,8 +340,9 @@ def pytest_configure(config):
 
     BasePage.self_heal_enabled = True
     if config.getoption("--self-heal") == "auto":
+        # 只开模型兜底，不开写回：规则 P0.4 —— 运行期修好 ≠ 已入库，运行期绝不改写
+        # 源码；正式的写回由 selector-self-heal skill 复核提案后另行执行。
         BasePage.self_heal_use_llm = True
-        BasePage.self_heal_patch = True
     try:
         from config.settings import SELF_HEAL_ARTIFACT, SELF_HEAL_FINGERPRINTS
 

@@ -25,13 +25,11 @@ flowchart LR
     AU --> E
     ST --> X["sessionfinish<br/>exitstatus = 1"]
     AU --> L["self_heal_use_llm = True"]
-    AU --> P["self_heal_patch = True<br/><b>写回源码</b>"]
-    L -.->|"互不依赖"| P
 ```
 
-`auto` 一个开关打开两件**互不依赖**的事。没有 API key 时模型不出场，但**规则修好的结果照样写回源码**——所以把 `auto` 理解成「AI 模式」是错的，它首先是**改源码模式**。
+`auto` 相比 `on` 只多做一件事：规则交白卷时让模型推理（要 API key；没有 key 时等同 `on`）。**任何档位都不打开写回**：`BasePage.self_heal_patch` 默认 `False`，conftest 也不设置它 —— 运行期修好 ≠ 已入库，写回源码是 [selector-self-heal skill](../.claude/skills/selector-self-heal/) 的职责，且要经人确认与落库闸门（边界条款 P0.4）。
 
-`strict` 在**运行期与 `on` 逐字相同**，不设任何额外属性；差别 100% 落在会话收尾把 `exitstatus` 置 1。而且那行只认字符串 `"strict"`——**`auto` 改了源码，仍可能以退出码 0 结束**。
+`strict` 在**运行期与 `on` 逐字相同**，不设任何额外属性；差别 100% 落在会话收尾把 `exitstatus` 置 1。而且那行只认字符串 `"strict"`——**`auto` 发生过自愈，仍以退出码 0 结束**。
 
 ---
 
@@ -62,10 +60,7 @@ flowchart TD
     S -->|"仍无"| R
     S -->|"有"| O
     O --> T["记 HEALED<br/>写 proposals.jsonl"]
-    T --> U{"patch?"}
-    U -->|是| V["改写 PageObject 源文件"]
-    U -->|否| W["重试 op 一次"]
-    V --> W
+    T --> W["重试 op 一次"]
 ```
 
 **三个最容易画错的地方**：
@@ -215,6 +210,11 @@ flowchart LR
 
 - `HEALED` / `PATCHED` 是模块级全局 list，**是自愈层通向 pytest 报告层的唯一通道**，进程内不清空。
 - `proposals.jsonl` **不是成功日志**：愈不成（`chosen=null`）也照写一条，它是「尝试记录」。产物落在 `reports/self-heal/`。
+- 写回是框架**保留的能力**（上游 VelocitAI 的 patcher 原样存在，上图描述的仍是框架代码的事实），
+  但本项目没有任何 `--self-heal` 档位会打开它：`BasePage.self_heal_patch` 默认 `False`，conftest 也不设置，
+  实际运行里 `patch?` 分支永远走「否」。正式的写回路径是
+  [selector-self-heal skill](../.claude/skills/selector-self-heal/)：人工复核 `proposals.jsonl` 里的提案后
+  改文件，并过落库闸门（边界条款 P0.4：运行期绝不改写源码）。
 - 写回被卡到极窄形态：常量名为空、为 `<unknown>`、或新旧值相同，三种情形直接否决；单行正则要求**常量名与旧值同时对上**，只改第一处，注释与行尾原样保留。
 - 备份两个反直觉点：**只在第一次写回时建**（连续自愈两次后 `.heal-bak` 里是首次写回前那版，是设计不是 bug），且未发生实际改动时根本不建。
 - **磁盘与内存在本次会话内是分叉的**：写回改的是磁盘文件，已 import 的 PageObject 类对象里常量还是旧值，本次运行继续靠拦截器的内存映射跑。
